@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { APP_DIR, saveConfig } from "./config.mjs";
+import { pythonCommand } from "./python-runtime.mjs";
 
 const SCREEN_PORT = 8082;
 
@@ -122,8 +123,7 @@ export class ScreenServer {
 
   #startStream(socket) {
     const workerPath = resolve(APP_DIR, "..", "pc_worker", "screen_streamer.py");
-    const pythonCommand = process.env.SMART_MPC_PYTHON || "python";
-    const stream = spawn(pythonCommand, [workerPath], {
+    const stream = spawn(pythonCommand(), [workerPath], {
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"]
     });

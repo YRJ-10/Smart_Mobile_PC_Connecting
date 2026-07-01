@@ -33,3 +33,10 @@ Struktur modul:
 - [pc_app](pc_app/README.md) - desktop app PC, Node server utama, pairing, file, clipboard, dan bridge ke worker.
 - [pc_worker](pc_worker/README.md) - worker Python untuk kontrol PC, audio loopback, dan screen capture.
 - [shared_protocol](shared_protocol/README.md) - kontrak endpoint, command, event, channel, dan auth.
+
+Script lokal:
+
+- `scripts/prepare_runtime.cmd` - install dependency Node, Flutter, dan Python worker.
+- `scripts/start_pc_app.cmd` - buka desktop PC app.
+- `scripts/start_pc_server.cmd` - jalankan PC server tanpa UI.
+- `scripts/run_android.cmd` - jalankan Android Flutter app.

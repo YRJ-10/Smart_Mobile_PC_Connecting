@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { APP_DIR, saveConfig } from "./config.mjs";
+import { pythonCommand } from "./python-runtime.mjs";
 
 const CONTROL_PORT = 8080;
 
@@ -164,8 +165,7 @@ export class ControlServer {
     if (this.#worker && !this.#worker.killed) return this.#worker;
 
     const workerPath = resolve(APP_DIR, "..", "pc_worker", "worker.py");
-    const pythonCommand = process.env.SMART_MPC_PYTHON || "python";
-    this.#worker = spawn(pythonCommand, [workerPath], {
+    this.#worker = spawn(pythonCommand(), [workerPath], {
       windowsHide: true,
       stdio: ["pipe", "pipe", "pipe"]
     });

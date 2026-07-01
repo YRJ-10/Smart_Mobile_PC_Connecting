@@ -4,9 +4,8 @@ Gunakan checklist ini setelah semua fase integrasi selesai.
 
 ## Persiapan PC
 
-- Install dependency PC app.
-- Install dependency worker Python dari `pc_worker/requirements.txt`.
-- Jalankan PC app.
+- Jalankan `scripts/prepare_runtime.cmd` sekali jika dependency belum siap.
+- Jalankan `scripts/start_pc_app.cmd`.
 - Pastikan HTTP, Remote, Discovery, dan Mirror status running di desktop shell.
 - Catat pairing token dari desktop shell.
 - Pastikan firewall mengizinkan jaringan lokal untuk port `8765`, `8080`, `8081`, dan `8082`.
