@@ -1,0 +1,123 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.iml
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment / local config
+.env
+.env.*
+!.env.example
+*.local
+local.properties
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+coverage/
+
+# Keep Flutter lockfiles for application projects.
+!pubspec.lock
+
+# Android / Gradle
+.gradle/
+**/android/.gradle/
+**/android/build/
+**/android/app/build/
+**/android/local.properties
+**/android/captures/
+**/android/.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# iOS / macOS generated output, in case Flutter desktop targets are added.
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/ephemeral/
+**/ios/Runner/GeneratedPluginRegistrant.*
+**/macos/Pods/
+**/macos/Flutter/ephemeral/
+**/macos/Flutter/GeneratedPluginRegistrant.swift
+
+# Windows / Linux Flutter generated output
+**/windows/flutter/ephemeral/
+**/linux/flutter/ephemeral/
+
+# Node / Electron
+node_modules/
+dist/
+out/
+release/
+releases/
+.cache/
+.parcel-cache/
+.vite/
+*.asar
+
+# Keep package locks for reproducible app builds.
+!package-lock.json
+!pnpm-lock.yaml
+!yarn.lock
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+ENV/
+
+# Python packaging/build artifacts
+*.egg-info/
+build/
+dist/
+*.spec
+
+# PC local server runtime data
+pc_app/config.json
+pc_app/inbox/
+pc_app/outbox/
+pc_app/logs/
+pc_worker/logs/
+
+# Generated media/runtime captures
+captures/
+recordings/
+screenshots/runtime/
+tmp/
+temp/
+
+# Secrets / certificates
+*.keystore
+*.jks
+*.p12
+*.pem
+*.key
+*.crt
