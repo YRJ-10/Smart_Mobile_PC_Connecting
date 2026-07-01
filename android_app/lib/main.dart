@@ -40,7 +40,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   static const _prefs = MethodChannel('smart_mpc/preferences');
 
-  final _baseUrlController = TextEditingController(text: 'http://192.168.1.10:8765');
+  final _baseUrlController =
+      TextEditingController(text: 'http://192.168.1.10:8765');
   final _pairingTokenController = TextEditingController();
 
   bool _busy = false;
@@ -53,7 +54,8 @@ class _HomeScreenState extends State<HomeScreen> {
   String _pcName = '';
   List<String> _baseUrls = const [];
 
-  bool get _isTrusted => _deviceId.isNotEmpty && _deviceToken.isNotEmpty && _pcId.isNotEmpty;
+  bool get _isTrusted =>
+      _deviceId.isNotEmpty && _deviceToken.isNotEmpty && _pcId.isNotEmpty;
 
   @override
   void initState() {
@@ -75,7 +77,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadConfig() async {
     try {
-      final config = await _prefs.invokeMapMethod<String, dynamic>('loadConfig') ?? {};
+      final config =
+          await _prefs.invokeMapMethod<String, dynamic>('loadConfig') ?? {};
       if (!mounted) return;
       setState(() {
         final baseUrl = config['baseUrl']?.toString() ?? '';
@@ -123,7 +126,9 @@ class _HomeScreenState extends State<HomeScreen> {
         _pcId = result['pc_id']?.toString() ?? _pcId;
       });
       await _saveConfig();
-      return pcName.isEmpty ? '$app is reachable' : '$app on $pcName is reachable';
+      return pcName.isEmpty
+          ? '$app is reachable'
+          : '$app on $pcName is reachable';
     });
   }
 
@@ -166,7 +171,9 @@ class _HomeScreenState extends State<HomeScreen> {
         _baseUrlController.text = urls.first;
         await _saveConfig();
       }
-      return urls.isEmpty ? 'Pair info loaded' : 'Found ${urls.length} PC address(es)';
+      return urls.isEmpty
+          ? 'Pair info loaded'
+          : 'Found ${urls.length} PC address(es)';
     });
   }
 
@@ -196,10 +203,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<Map<String, dynamic>> _getJson(String path) async {
     final client = HttpClient();
     try {
-      final request = await client
-          .getUrl(_uri(path))
-          .timeout(const Duration(seconds: 5));
-      final response = await request.close().timeout(const Duration(seconds: 8));
+      final request =
+          await client.getUrl(_uri(path)).timeout(const Duration(seconds: 5));
+      final response =
+          await request.close().timeout(const Duration(seconds: 8));
       return _readJson(response);
     } finally {
       client.close(force: true);
@@ -213,18 +220,19 @@ class _HomeScreenState extends State<HomeScreen> {
   }) async {
     final client = HttpClient();
     try {
-      final request = await client
-          .postUrl(_uri(path))
-          .timeout(const Duration(seconds: 5));
+      final request =
+          await client.postUrl(_uri(path)).timeout(const Duration(seconds: 5));
       request.headers.contentType = ContentType.json;
       if (pairing) {
-        request.headers.add('X-Pairing-Token', _pairingTokenController.text.trim());
+        request.headers
+            .add('X-Pairing-Token', _pairingTokenController.text.trim());
       } else if (_isTrusted) {
         request.headers.add('X-Device-Id', _deviceId);
         request.headers.add('X-Device-Token', _deviceToken);
       }
       request.write(jsonEncode(body));
-      final response = await request.close().timeout(const Duration(seconds: 8));
+      final response =
+          await request.close().timeout(const Duration(seconds: 8));
       return _readJson(response);
     } finally {
       client.close(force: true);
@@ -233,9 +241,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<Map<String, dynamic>> _readJson(HttpClientResponse response) async {
     final text = await response.transform(utf8.decoder).join();
-    final decoded = text.isEmpty ? <String, dynamic>{} : jsonDecode(text) as Map<String, dynamic>;
+    final decoded = text.isEmpty
+        ? <String, dynamic>{}
+        : jsonDecode(text) as Map<String, dynamic>;
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception(decoded['error']?.toString() ?? 'HTTP ${response.statusCode}');
+      throw Exception(
+          decoded['error']?.toString() ?? 'HTTP ${response.statusCode}');
     }
     if (decoded['ok'] == false) {
       throw Exception(decoded['error']?.toString() ?? 'Request failed');
@@ -255,7 +266,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final suffix = List<int>.generate(8, (_) => random.nextInt(256))
         .map((value) => value.toRadixString(16).padLeft(2, '0'))
         .join();
-    setState(() => _deviceId = 'android-${DateTime.now().millisecondsSinceEpoch}-$suffix');
+    setState(() =>
+        _deviceId = 'android-${DateTime.now().millisecondsSinceEpoch}-$suffix');
     _saveConfig();
   }
 
@@ -266,17 +278,23 @@ class _HomeScreenState extends State<HomeScreen> {
       _PlaceholderPage(
         title: 'Quick Actions',
         icon: Icons.bolt_rounded,
-        lines: const ['NFC actions, file, clipboard, and PC commands land here in later phases.'],
+        lines: const [
+          'NFC actions, file, clipboard, and PC commands land here in later phases.'
+        ],
       ),
       _PlaceholderPage(
         title: 'Remote',
         icon: Icons.touch_app_rounded,
-        lines: const ['Trackpad, keyboard, voice typing, and media controls land here in later phases.'],
+        lines: const [
+          'Trackpad, keyboard, voice typing, and media controls land here in later phases.'
+        ],
       ),
       _PlaceholderPage(
         title: 'Mirror',
         icon: Icons.screenshot_monitor_rounded,
-        lines: const ['Screen mirror, touch mapping, and audio controls land here in later phases.'],
+        lines: const [
+          'Screen mirror, touch mapping, and audio controls land here in later phases.'
+        ],
       ),
     ];
 
@@ -300,10 +318,14 @@ class _HomeScreenState extends State<HomeScreen> {
         selectedIndex: _tabIndex,
         onDestinationSelected: (index) => setState(() => _tabIndex = index),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.lan_rounded), label: 'Connect'),
-          NavigationDestination(icon: Icon(Icons.bolt_rounded), label: 'Actions'),
-          NavigationDestination(icon: Icon(Icons.touch_app_rounded), label: 'Remote'),
-          NavigationDestination(icon: Icon(Icons.screenshot_monitor_rounded), label: 'Mirror'),
+          NavigationDestination(
+              icon: Icon(Icons.lan_rounded), label: 'Connect'),
+          NavigationDestination(
+              icon: Icon(Icons.bolt_rounded), label: 'Actions'),
+          NavigationDestination(
+              icon: Icon(Icons.touch_app_rounded), label: 'Remote'),
+          NavigationDestination(
+              icon: Icon(Icons.screenshot_monitor_rounded), label: 'Mirror'),
         ],
       ),
     );
@@ -364,7 +386,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     label: const Text('Trust Phone'),
                   ),
                   OutlinedButton.icon(
-                    onPressed: _busy ? null : () => _saveConfig(showStatus: true),
+                    onPressed:
+                        _busy ? null : () => _saveConfig(showStatus: true),
                     icon: const Icon(Icons.save_rounded),
                     label: const Text('Save'),
                   ),
@@ -381,7 +404,10 @@ class _HomeScreenState extends State<HomeScreen> {
               _InfoRow(label: 'Phone', value: _deviceName),
               _InfoRow(label: 'Device ID', value: _deviceId),
               _InfoRow(label: 'PC ID', value: _pcId),
-              _InfoRow(label: 'Device Token', value: _deviceToken.isEmpty ? 'Not trusted' : 'Saved locally'),
+              _InfoRow(
+                  label: 'Device Token',
+                  value:
+                      _deviceToken.isEmpty ? 'Not trusted' : 'Saved locally'),
               const SizedBox(height: 8),
               Align(
                 alignment: Alignment.centerLeft,
@@ -462,7 +488,10 @@ class _HeroPanel extends StatelessWidget {
                   children: [
                     Text(
                       trusted ? 'Ready for PC actions' : 'Connect to your PC',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 4),
                     Text(pcName.isEmpty ? 'Local Wi-Fi connection' : pcName),
@@ -499,7 +528,10 @@ class _SectionCard extends StatelessWidget {
         children: [
           Text(
             title,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+            style: Theme.of(context)
+                .textTheme
+                .titleSmall
+                ?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 12),
           child,
@@ -526,7 +558,8 @@ class _StateChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: Text(
         label,
-        style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
+        style:
+            TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
       ),
     );
   }
@@ -547,7 +580,8 @@ class _InfoRow extends StatelessWidget {
         children: [
           SizedBox(
             width: 104,
-            child: Text(label, style: const TextStyle(color: Color(0xFF9AA8AF))),
+            child:
+                Text(label, style: const TextStyle(color: Color(0xFF9AA8AF))),
           ),
           Expanded(child: SelectableText(value.isEmpty ? '-' : value)),
         ],
@@ -579,7 +613,10 @@ class _PlaceholderPage extends StatelessWidget {
             const SizedBox(height: 14),
             Text(
               title,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w700),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
