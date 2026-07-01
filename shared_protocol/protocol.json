@@ -125,6 +125,9 @@
     "audio_stopped",
     "screen_started",
     "screen_stopped",
+    "discovery_started",
+    "discovery_stopped",
+    "discovery_response",
     "unauthorized"
   ],
   "compatibility": {

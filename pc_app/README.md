@@ -60,6 +60,7 @@ Remote control:
 - Eksekusi OS diteruskan ke `pc_worker`.
 - Audio toggle memakai control channel untuk start/stop worker audio stream ke Android.
 - Screen mirror memakai TCP channel `8082`, trusted auth, dan worker screen streamer.
+- Discovery memakai UDP port `8081` dan merespons request baru maupun legacy.
 
 Runtime files yang dibuat saat server dijalankan:
 

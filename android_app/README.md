@@ -71,6 +71,15 @@ Fitur tambahan:
 - touch down/move/up mapping ke PC
 - pinch/zoom viewer
 
+## Fase 10: Discovery
+
+Fitur tambahan:
+
+- Find PC via UDP broadcast
+- support response `SMART_MPC_SERVER`
+- support legacy response `MOBILEPC_SERVER`
+- discovered PC list
+
 ## Jalankan
 
 ```powershell

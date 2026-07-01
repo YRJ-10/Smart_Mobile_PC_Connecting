@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -72,6 +73,7 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime _lastMoveAt = DateTime.fromMillisecondsSinceEpoch(0);
   static const int _audioPort = 8081;
   List<String> _baseUrls = const [];
+  List<_DiscoveredPc> _discoveredPcs = const [];
   List<_PcRequestFile> _requestFiles = const [];
 
   bool get _isTrusted =>
@@ -228,6 +230,51 @@ class _HomeScreenState extends State<HomeScreen> {
       return urls.isEmpty
           ? 'Pair info loaded'
           : 'Found ${urls.length} PC address(es)';
+    });
+  }
+
+  Future<void> _discoverPcs() async {
+    await _run('Searching local network', () async {
+      final socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+      socket.broadcastEnabled = true;
+
+      final results = <String, _DiscoveredPc>{};
+      late StreamSubscription<RawSocketEvent> subscription;
+      subscription = socket.listen((event) {
+        if (event != RawSocketEvent.read) return;
+        Datagram? datagram;
+        while ((datagram = socket.receive()) != null) {
+          final discovered = _DiscoveredPc.tryParse(datagram!);
+          if (discovered != null) results[discovered.baseUrl] = discovered;
+        }
+      });
+
+      final target = InternetAddress('255.255.255.255');
+      for (final message in const ['DISCOVER_SMART_MPC', 'DISCOVER_MOBILEPC']) {
+        socket.send(utf8.encode(message), target, 8081);
+      }
+
+      await Future<void>.delayed(const Duration(milliseconds: 2200));
+      await subscription.cancel();
+      socket.close();
+
+      final pcs = results.values.toList()
+        ..sort((a, b) => a.name.compareTo(b.name));
+      final urls = pcs.map((pc) => pc.baseUrl).toList();
+
+      setState(() {
+        _discoveredPcs = pcs;
+        if (urls.isNotEmpty) _baseUrls = urls;
+      });
+
+      if (pcs.isNotEmpty) {
+        _baseUrlController.text = pcs.first.baseUrl;
+        _pcName = pcs.first.name;
+        _pcId = pcs.first.pcId.isEmpty ? _pcId : pcs.first.pcId;
+        await _saveConfig();
+      }
+
+      return pcs.isEmpty ? 'No PC found' : 'Found ${pcs.length} PC server(s)';
     });
   }
 
@@ -868,6 +915,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     label: const Text('Pair Info'),
                   ),
                   FilledButton.icon(
+                    onPressed: _busy ? null : _discoverPcs,
+                    icon: const Icon(Icons.radar_rounded),
+                    label: const Text('Find PC'),
+                  ),
+                  FilledButton.icon(
                     onPressed: _busy ? null : _pairWithPc,
                     icon: const Icon(Icons.verified_user_rounded),
                     label: const Text('Trust Phone'),
@@ -920,6 +972,33 @@ class _HomeScreenState extends State<HomeScreen> {
                       title: Text(url),
                       onTap: () {
                         setState(() => _baseUrlController.text = url);
+                        _saveConfig(showStatus: true);
+                      },
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        ],
+        if (_discoveredPcs.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          _SectionCard(
+            title: 'Discovered PCs',
+            child: Column(
+              children: _discoveredPcs
+                  .map(
+                    (pc) => ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.desktop_windows_rounded),
+                      title: Text(pc.name),
+                      subtitle: Text(pc.baseUrl),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () {
+                        setState(() {
+                          _baseUrlController.text = pc.baseUrl;
+                          _pcName = pc.name;
+                          _pcId = pc.pcId.isEmpty ? _pcId : pc.pcId;
+                        });
                         _saveConfig(showStatus: true);
                       },
                     ),
@@ -1459,6 +1538,71 @@ class _SpecialKeyButton extends StatelessWidget {
       onPressed: () => send({'type': 'SPECIAL_KEY', 'key': keyId}),
       child: Text(label),
     );
+  }
+}
+
+class _DiscoveredPc {
+  const _DiscoveredPc({
+    required this.name,
+    required this.baseUrl,
+    required this.pcId,
+  });
+
+  final String name;
+  final String baseUrl;
+  final String pcId;
+
+  static _DiscoveredPc? tryParse(Datagram datagram) {
+    final text = utf8.decode(datagram.data, allowMalformed: true).trim();
+    if (text.isEmpty) return null;
+
+    final payload = _decodePayload(text);
+    if (payload == null) return null;
+
+    final type = payload['type']?.toString() ?? '';
+    if (type != 'SMART_MPC_SERVER' && type != 'MOBILEPC_SERVER') return null;
+
+    final baseUrls = (payload['base_urls'] as List<dynamic>? ?? [])
+        .map((value) => value.toString())
+        .where((value) => value.startsWith('http://'))
+        .toList();
+    final port = int.tryParse(payload['port']?.toString() ?? '') ?? 8765;
+    final fallbackUrl = 'http://${datagram.address.address}:$port';
+    final matchingUrl = _matchingBaseUrl(baseUrls, datagram.address.address);
+    final baseUrl =
+        matchingUrl ?? (baseUrls.isEmpty ? fallbackUrl : baseUrls.first);
+    final pcName = payload['pc_name']?.toString().trim() ?? '';
+
+    return _DiscoveredPc(
+      name: pcName.isEmpty ? datagram.address.address : pcName,
+      baseUrl: baseUrl,
+      pcId: payload['pc_id']?.toString() ?? '',
+    );
+  }
+
+  static Map<String, dynamic>? _decodePayload(String text) {
+    try {
+      if (text.startsWith('{')) {
+        return jsonDecode(text) as Map<String, dynamic>;
+      }
+      if (text.startsWith('MOBILEPC_SERVER')) {
+        final jsonStart = text.indexOf('{');
+        if (jsonStart >= 0) {
+          return jsonDecode(text.substring(jsonStart)) as Map<String, dynamic>;
+        }
+        return {'type': 'MOBILEPC_SERVER'};
+      }
+    } catch (_) {
+      return null;
+    }
+    return null;
+  }
+
+  static String? _matchingBaseUrl(List<String> urls, String host) {
+    for (final url in urls) {
+      if (Uri.tryParse(url)?.host == host) return url;
+    }
+    return null;
   }
 }
 

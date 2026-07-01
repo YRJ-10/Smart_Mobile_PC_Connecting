@@ -24,6 +24,8 @@ Dokumen awal:
 - [Phase 7 Remote Control Live](docs/PHASE_7_REMOTE_CONTROL_LIVE.md)
 - [Phase 8 Audio Streaming](docs/PHASE_8_AUDIO_STREAMING.md)
 - [Phase 9 Screen Mirror](docs/PHASE_9_SCREEN_MIRROR.md)
+- [Phase 10 Discovery and Prep](docs/PHASE_10_DISCOVERY_AND_PREP.md)
+- [Holistic Test Checklist](docs/HOLISTIC_TEST_CHECKLIST.md)
 
 Struktur modul:
 
