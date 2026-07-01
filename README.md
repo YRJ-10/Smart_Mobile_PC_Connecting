@@ -18,6 +18,7 @@ Dokumen awal:
 - [Phase 1 Structure](docs/PHASE_1_STRUCTURE.md)
 - [Phase 2 PC Server Core](docs/PHASE_2_PC_SERVER_CORE.md)
 - [Phase 3 PC Desktop Shell](docs/PHASE_3_PC_DESKTOP_SHELL.md)
+- [Phase 4 Android App Core](docs/PHASE_4_ANDROID_APP_CORE.md)
 
 Struktur modul:
 
