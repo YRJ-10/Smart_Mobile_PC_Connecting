@@ -28,3 +28,29 @@ Catatan:
 - `pc_app` menjadi pusat trust/auth.
 - Channel remote-control dari worker harus dilindungi oleh trusted device/session.
 - Runtime data lokal seperti `config.json`, `inbox`, `outbox`, dan logs tidak masuk git.
+
+## Fase 2: Server Core
+
+Server core awal tersedia di `src/`.
+
+Script:
+
+```powershell
+npm run server
+npm run check
+```
+
+Endpoint awal:
+
+- `GET /health`
+- `GET /pair`
+- `POST /api/devices/register`
+- `GET /api/server/state`
+
+Runtime files yang dibuat saat server dijalankan:
+
+- `config.json`
+- `inbox/`
+- `outbox/`
+
+File runtime tersebut tidak masuk git.

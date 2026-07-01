@@ -1,0 +1,107 @@
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { DEFAULT_HOST, DEFAULT_PORT } from "./constants.mjs";
+
+const SRC_DIR = dirname(fileURLToPath(import.meta.url));
+export const APP_DIR = dirname(SRC_DIR);
+export const CONFIG_PATH = join(APP_DIR, "config.json");
+export const DEFAULT_INBOX_DIR = join(APP_DIR, "inbox");
+export const DEFAULT_OUTBOX_DIR = join(APP_DIR, "outbox");
+
+function token() {
+  return randomUUID().replaceAll("-", "");
+}
+
+function defaultConfig() {
+  return {
+    schema_version: 1,
+    pc_id: randomUUID(),
+    host: DEFAULT_HOST,
+    port: DEFAULT_PORT,
+    pairing_token: token(),
+    trusted_devices: {},
+    inbox_dir: DEFAULT_INBOX_DIR,
+    outbox_dir: DEFAULT_OUTBOX_DIR,
+    allowed_commands: {
+      open_inbox: { type: "open_path", target: "inbox" },
+      open_downloads: { type: "open_known_folder", target: "downloads" },
+      open_chrome: { type: "pc_action" },
+      lock_pc: { type: "pc_action" },
+      sleep_pc: { type: "pc_action" }
+    }
+  };
+}
+
+function normalizeConfig(config) {
+  let changed = false;
+  const next = { ...config };
+
+  if (!next.schema_version) {
+    next.schema_version = 1;
+    changed = true;
+  }
+  if (!next.pc_id) {
+    next.pc_id = randomUUID();
+    changed = true;
+  }
+  if (!next.host) {
+    next.host = DEFAULT_HOST;
+    changed = true;
+  }
+  if (!next.port) {
+    next.port = DEFAULT_PORT;
+    changed = true;
+  }
+  if (!next.pairing_token) {
+    next.pairing_token = token();
+    changed = true;
+  }
+  if (!next.trusted_devices) {
+    next.trusted_devices = {};
+    changed = true;
+  }
+  if (!next.inbox_dir) {
+    next.inbox_dir = DEFAULT_INBOX_DIR;
+    changed = true;
+  }
+  if (!next.outbox_dir) {
+    next.outbox_dir = DEFAULT_OUTBOX_DIR;
+    changed = true;
+  }
+  if (!next.allowed_commands) {
+    next.allowed_commands = defaultConfig().allowed_commands;
+    changed = true;
+  }
+
+  return { config: next, changed };
+}
+
+export function loadOrCreateConfig() {
+  if (!existsSync(CONFIG_PATH)) {
+    const created = defaultConfig();
+    ensureRuntimeDirs(created);
+    writeFileSync(CONFIG_PATH, JSON.stringify(created, null, 2), "utf8");
+    return created;
+  }
+
+  const parsed = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+  const { config, changed } = normalizeConfig(parsed);
+  ensureRuntimeDirs(config);
+  if (changed) saveConfig(config);
+  return config;
+}
+
+export function saveConfig(config) {
+  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf8");
+}
+
+export function ensureRuntimeDirs(config) {
+  mkdirSync(config.inbox_dir ?? DEFAULT_INBOX_DIR, { recursive: true });
+  mkdirSync(config.outbox_dir ?? DEFAULT_OUTBOX_DIR, { recursive: true });
+}
+
+export function createDeviceToken() {
+  return token();
+}
