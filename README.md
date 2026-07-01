@@ -17,6 +17,7 @@ Dokumen awal:
 - [Phase 0 Feature Lock](docs/PHASE_0_FEATURE_LOCK.md)
 - [Phase 1 Structure](docs/PHASE_1_STRUCTURE.md)
 - [Phase 2 PC Server Core](docs/PHASE_2_PC_SERVER_CORE.md)
+- [Phase 3 PC Desktop Shell](docs/PHASE_3_PC_DESKTOP_SHELL.md)
 
 Struktur modul:
 

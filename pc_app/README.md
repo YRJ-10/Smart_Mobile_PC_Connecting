@@ -54,3 +54,32 @@ Runtime files yang dibuat saat server dijalankan:
 - `outbox/`
 
 File runtime tersebut tidak masuk git.
+
+## Fase 3: Desktop Shell
+
+Electron shell awal tersedia.
+
+Script:
+
+```powershell
+npm install
+npm run start
+```
+
+UI awal:
+
+- server status
+- start/stop server
+- PC name
+- port
+- pairing token
+- base URL list
+- trusted devices list
+- revoke trusted device
+- activity log
+- open inbox/outbox
+
+Catatan:
+
+- Dependency Electron belum di-install otomatis oleh fase ini.
+- Full UI verification ditunda sampai fase testing gabungan.

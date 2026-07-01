@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart MPC</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>Smart MPC</h1>
+          <p id="subtitle">PC local server</p>
+        </div>
+        <div class="server-actions">
+          <span id="serverStatus" class="status-pill">Loading</span>
+          <button id="toggleServerButton" type="button">Start</button>
+        </div>
+      </header>
+
+      <section id="errorPanel" class="error-panel hidden"></section>
+
+      <section class="overview-grid">
+        <div class="panel server-panel">
+          <div class="panel-header">
+            <h2>Connection</h2>
+            <button id="copyTokenButton" type="button">Copy Token</button>
+          </div>
+          <div class="info-grid">
+            <div>
+              <span class="label">PC Name</span>
+              <strong id="pcName">-</strong>
+            </div>
+            <div>
+              <span class="label">Port</span>
+              <strong id="port">-</strong>
+            </div>
+            <div class="wide">
+              <span class="label">Pairing Token</span>
+              <code id="pairingToken">-</code>
+            </div>
+          </div>
+          <div class="url-list" id="baseUrlList"></div>
+        </div>
+
+        <div class="panel folder-panel">
+          <div class="panel-header">
+            <h2>Folders</h2>
+          </div>
+          <div class="folder-actions">
+            <button id="openInboxButton" type="button">Open Inbox</button>
+            <button id="openOutboxButton" type="button">Open Outbox</button>
+          </div>
+          <p>Inbox receives phone uploads. Outbox is where PC files are shared to phone.</p>
+        </div>
+      </section>
+
+      <section class="main-grid">
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Trusted Devices</h2>
+            <span id="deviceCount" class="count">0</span>
+          </div>
+          <div id="deviceList" class="list"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Activity</h2>
+            <span id="logCount" class="count">0</span>
+          </div>
+          <div id="logList" class="list log-list"></div>
+        </div>
+      </section>
+    </main>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>
