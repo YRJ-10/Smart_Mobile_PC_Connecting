@@ -187,7 +187,8 @@ span,
 }
 
 .url-list,
-.list {
+.list,
+.mini-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -203,6 +204,27 @@ span,
 .folder-panel p {
   line-height: 1.5;
   margin-top: 12px;
+}
+
+.mini-list {
+  margin-top: 12px;
+}
+
+.mini-row {
+  align-items: center;
+  border: 1px solid #253139;
+  border-radius: 6px;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  min-height: 36px;
+  padding: 8px 10px;
+}
+
+.mini-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .list-row {
@@ -251,6 +273,10 @@ span,
   color: #7e8b92;
   padding: 16px;
   text-align: center;
+}
+
+.empty.compact {
+  padding: 10px;
 }
 
 @media (max-width: 940px) {

@@ -12,6 +12,18 @@ Flutter client untuk Smart MPC.
 - basic navigation shell
 - status trusted/untrusted
 
+## Fase 5: File, Clipboard, Quick Actions
+
+Fitur tambahan:
+
+- upload file Android ke PC inbox via native picker
+- request/list PC outbox files
+- download PC file ke Android Downloads
+- send clipboard text to PC
+- pull PC clipboard to phone
+- open URL on PC
+- PC command buttons
+
 ## Jalankan
 
 ```powershell

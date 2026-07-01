@@ -7,5 +7,6 @@ contextBridge.exposeInMainWorld("smartMpc", {
   revokeDevice: (deviceId) => ipcRenderer.invoke("server:revokeDevice", deviceId),
   copy: (text) => ipcRenderer.invoke("ui:copy", text),
   openInbox: () => ipcRenderer.invoke("ui:openInbox"),
-  openOutbox: () => ipcRenderer.invoke("ui:openOutbox")
+  openOutbox: () => ipcRenderer.invoke("ui:openOutbox"),
+  addFilesToOutbox: () => ipcRenderer.invoke("ui:addFilesToOutbox")
 });

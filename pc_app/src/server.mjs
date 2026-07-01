@@ -1,6 +1,16 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
-import { hostname } from "node:os";
+import { execFile, spawn } from "node:child_process";
+import {
+  copyFileSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync
+} from "node:fs";
+import { homedir, hostname, platform } from "node:os";
+import { join, parse, relative, resolve } from "node:path";
 import {
   APP_NAME,
   DEFAULT_PORT,
@@ -12,6 +22,130 @@ import {
 import { baseUrls, localIps } from "./network.mjs";
 import { createDeviceToken, loadOrCreateConfig, saveConfig } from "./config.mjs";
 import { RequestLog } from "./request-log.mjs";
+
+function safeFilename(name) {
+  const cleaned = String(name ?? "")
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || `file-${Date.now()}`;
+}
+
+function uniquePath(directory, filename) {
+  const clean = safeFilename(filename);
+  const parsed = parse(clean);
+  let target = resolve(directory, clean);
+  let index = 1;
+
+  while (existsSync(target)) {
+    target = resolve(directory, `${parsed.name}-${index}${parsed.ext}`);
+    index += 1;
+  }
+
+  return target;
+}
+
+function safeChildPath(directory, filename) {
+  const target = resolve(directory, safeFilename(filename));
+  const distance = relative(resolve(directory), target);
+  if (distance.startsWith("..") || distance === "" || resolve(distance) === distance) {
+    throw new Error("Invalid filename");
+  }
+  return target;
+}
+
+function listFiles(directory) {
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => {
+      const target = join(directory, entry.name);
+      const stats = statSync(target);
+      return {
+        name: entry.name,
+        bytes: stats.size,
+        modified_at: stats.mtime.toISOString()
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function run(command, args, options = {}) {
+  return new Promise((resolveRun, reject) => {
+    const child = execFile(command, args, { windowsHide: true, ...options }, (error) => {
+      if (error) reject(error);
+      else resolveRun();
+    });
+    child.stdin?.end();
+  });
+}
+
+function runCapture(command, args, options = {}) {
+  return new Promise((resolveRun, reject) => {
+    execFile(command, args, { windowsHide: true, ...options }, (error, stdout) => {
+      if (error) reject(error);
+      else resolveRun(stdout);
+    });
+  });
+}
+
+async function openTarget(target) {
+  const value = String(target ?? "").trim();
+  if (!value) throw new Error("Missing target");
+
+  if (platform() === "win32") {
+    await run("powershell.exe", ["-NoProfile", "-Command", "Start-Process $args[0]", value]);
+    return;
+  }
+
+  await run("xdg-open", [value]);
+}
+
+async function setClipboard(text) {
+  if (platform() !== "win32") throw new Error("Clipboard is only implemented for Windows in this phase");
+
+  await new Promise((resolveRun, reject) => {
+    const child = spawn("powershell.exe", ["-NoProfile", "-Command", "Set-Clipboard -Value $input"], {
+      windowsHide: true,
+      stdio: ["pipe", "ignore", "pipe"]
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolveRun();
+      else reject(new Error(`Set-Clipboard exited with code ${code}`));
+    });
+    child.stdin.end(String(text ?? ""));
+  });
+}
+
+async function getClipboard() {
+  if (platform() !== "win32") throw new Error("Clipboard is only implemented for Windows in this phase");
+  return runCapture("powershell.exe", ["-NoProfile", "-Command", "Get-Clipboard -Raw"]);
+}
+
+async function lockPc() {
+  if (platform() !== "win32") throw new Error("Lock PC is only implemented for Windows");
+  await run("rundll32.exe", ["user32.dll,LockWorkStation"]);
+}
+
+async function sleepPc() {
+  if (platform() !== "win32") throw new Error("Sleep PC is only implemented for Windows");
+  await run("powershell.exe", [
+    "-NoProfile",
+    "-Command",
+    "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState('Suspend', $false, $false)"
+  ]);
+}
+
+async function openChrome() {
+  const candidates = [
+    process.env.PROGRAMFILES ? join(process.env.PROGRAMFILES, "Google", "Chrome", "Application", "chrome.exe") : "",
+    process.env["PROGRAMFILES(X86)"] ? join(process.env["PROGRAMFILES(X86)"], "Google", "Chrome", "Application", "chrome.exe") : "",
+    process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe") : ""
+  ].filter(Boolean);
+  const chromePath = candidates.find((candidate) => existsSync(candidate));
+  await openTarget(chromePath || "https://www.google.com");
+}
 
 export class SmartMpcServer {
   #config;
@@ -47,6 +181,7 @@ export class SmartMpcServer {
       pairing_token: this.#config.pairing_token,
       inbox_dir: this.#config.inbox_dir,
       outbox_dir: this.#config.outbox_dir,
+      outbox_files: listFiles(this.#config.outbox_dir),
       trusted_devices: Object.entries(this.#config.trusted_devices ?? {}).map(([id, device]) => ({
         id,
         name: device.name,
@@ -116,6 +251,21 @@ export class SmartMpcServer {
     return this.state();
   }
 
+  addFilesToOutbox(paths) {
+    const copied = [];
+    for (const source of paths ?? []) {
+      const sourcePath = String(source ?? "");
+      if (!sourcePath || !existsSync(sourcePath) || !statSync(sourcePath).isFile()) continue;
+      const target = uniquePath(this.#config.outbox_dir, parse(sourcePath).base);
+      copyFileSync(sourcePath, target);
+      copied.push({ name: parse(target).base, source: parse(sourcePath).base });
+    }
+    if (copied.length) {
+      this.#requestLog.add("outbox_files_added", { count: copied.length });
+    }
+    return { state: this.state(), copied };
+  }
+
   async #handleRequest(req, res) {
     const requestUrl = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const route = requestUrl.pathname;
@@ -140,13 +290,88 @@ export class SmartMpcServer {
       return;
     }
 
+    const protectedGet =
+      req.method === "GET" &&
+      (route === "/api/clipboard" ||
+        route === "/api/request-files" ||
+        route === "/api/request-files/download" ||
+        route === "/api/server/state");
+    const protectedPost = req.method === "POST" && (route === "/api/intent" || route === "/api/files");
+
+    if ((protectedGet || protectedPost) && !this.#isAuthorized(req)) {
+      this.#requestLog.add("unauthorized", { route });
+      sendJson(res, 401, { ok: false, error: "Unauthorized" });
+      return;
+    }
+
     if (req.method === "GET" && route === "/api/server/state") {
-      if (!this.#isAuthorized(req)) {
-        this.#requestLog.add("unauthorized", { route });
-        sendJson(res, 401, { ok: false, error: "Unauthorized" });
-        return;
-      }
       sendJson(res, 200, { ok: true, state: this.state() });
+      return;
+    }
+
+    if (req.method === "GET" && route === "/api/clipboard") {
+      try {
+        const text = await getClipboard();
+        this.#requestLog.add("clipboard_requested", { bytes: Buffer.byteLength(text, "utf8") });
+        sendJson(res, 200, { ok: true, text });
+      } catch (error) {
+        sendJson(res, 400, { ok: false, error: error.message });
+      }
+      return;
+    }
+
+    if (req.method === "GET" && route === "/api/request-files") {
+      sendJson(res, 200, { ok: true, files: listFiles(this.#config.outbox_dir) });
+      return;
+    }
+
+    if (req.method === "GET" && route === "/api/request-files/download") {
+      try {
+        const filename = requestUrl.searchParams.get("filename") ?? "";
+        const target = safeChildPath(this.#config.outbox_dir, filename);
+        if (!existsSync(target) || !statSync(target).isFile()) {
+          sendJson(res, 404, { ok: false, error: "File not found" });
+          return;
+        }
+
+        const data = readFileSync(target);
+        this.#requestLog.add("file_requested", { filename: parse(target).base, bytes: data.length });
+        res.writeHead(200, {
+          "Content-Type": "application/octet-stream",
+          "Content-Length": data.length,
+          "Content-Disposition": `attachment; filename="${safeFilename(filename)}"`,
+          "Access-Control-Allow-Origin": "*"
+        });
+        res.end(data);
+      } catch (error) {
+        sendJson(res, 400, { ok: false, error: error.message });
+      }
+      return;
+    }
+
+    if (req.method === "POST" && route === "/api/files") {
+      try {
+        const filename = requestUrl.searchParams.get("filename") ?? `upload-${Date.now()}.bin`;
+        const body = await readBody(req);
+        const target = uniquePath(this.#config.inbox_dir, filename);
+        writeFileSync(target, body);
+        this.#requestLog.add("file_uploaded", { filename: parse(target).base, bytes: body.length });
+        sendJson(res, 200, { ok: true, saved_to: parse(target).base, bytes: body.length });
+      } catch (error) {
+        sendJson(res, 400, { ok: false, error: error.message });
+      }
+      return;
+    }
+
+    if (req.method === "POST" && route === "/api/intent") {
+      try {
+        const intent = await readJson(req);
+        const result = await this.#handleIntent(intent);
+        this.#requestLog.add("intent_received", { action: result.action ?? intent.type });
+        sendJson(res, 200, { ok: true, result });
+      } catch (error) {
+        sendJson(res, 400, { ok: false, error: error.message });
+      }
       return;
     }
 
@@ -213,6 +438,81 @@ export class SmartMpcServer {
 
   #isPairingAuthorized(req) {
     return req.headers[HEADER_PAIRING_TOKEN] === this.#config.pairing_token;
+  }
+
+  async #handleIntent(intent) {
+    const type = intent?.type;
+    const payload = intent?.payload ?? {};
+
+    if (type === "url") {
+      const url = String(payload.url ?? "").trim();
+      if (!url) throw new Error("Missing payload.url");
+      await openTarget(url);
+      return { action: "url", opened: url };
+    }
+
+    if (type === "clipboard") {
+      const text = String(payload.text ?? "");
+      await setClipboard(text);
+      return { action: "clipboard", bytes: Buffer.byteLength(text, "utf8") };
+    }
+
+    if (type === "file") {
+      const filename = String(payload.filename ?? `file-${Date.now()}`);
+      if (!payload.content_base64) throw new Error("Missing payload.content_base64");
+      const data = Buffer.from(String(payload.content_base64), "base64");
+      const target = uniquePath(this.#config.inbox_dir, filename);
+      writeFileSync(target, data);
+      return { action: "file", saved_to: parse(target).base, bytes: data.length };
+    }
+
+    if (type === "command") {
+      const commandId = String(payload.command_id ?? "");
+      return { action: "command", ...(await this.#runAllowedCommand(commandId)) };
+    }
+
+    if (type === "continue") {
+      if (payload.url) return this.#handleIntent({ type: "url", payload: { url: payload.url } });
+      if (payload.text) return this.#handleIntent({ type: "clipboard", payload: { text: payload.text } });
+      throw new Error("Continue intent has no supported payload");
+    }
+
+    throw new Error(`Unsupported intent type: ${type}`);
+  }
+
+  async #runAllowedCommand(commandId) {
+    const id = String(commandId ?? "").trim();
+    if (!id) throw new Error("Missing command_id");
+
+    if (id === "lock_pc") {
+      await lockPc();
+      return { command_id: id };
+    }
+
+    if (id === "sleep_pc") {
+      sleepPc().catch((error) => this.#requestLog.add("command_error", { action: id, error: error.message }));
+      return { command_id: id };
+    }
+
+    if (id === "open_chrome") {
+      await openChrome();
+      return { command_id: id };
+    }
+
+    const command = this.#config.allowed_commands?.[id];
+    if (!command) throw new Error(`Command not allowed: ${id}`);
+
+    if (command.type === "open_path" && command.target === "inbox") {
+      await openTarget(this.#config.inbox_dir);
+      return { command_id: id, target: "inbox" };
+    }
+
+    if (command.type === "open_known_folder" && command.target === "downloads") {
+      await openTarget(join(homedir(), "Downloads"));
+      return { command_id: id, target: "downloads" };
+    }
+
+    throw new Error(`Unsupported command: ${id}`);
   }
 
   #isAuthorized(req) {

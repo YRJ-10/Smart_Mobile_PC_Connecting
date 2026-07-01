@@ -11,6 +11,8 @@ const copyTokenButton = document.querySelector("#copyTokenButton");
 const baseUrlList = document.querySelector("#baseUrlList");
 const openInboxButton = document.querySelector("#openInboxButton");
 const openOutboxButton = document.querySelector("#openOutboxButton");
+const addOutboxFilesButton = document.querySelector("#addOutboxFilesButton");
+const outboxFileList = document.querySelector("#outboxFileList");
 const deviceList = document.querySelector("#deviceList");
 const deviceCount = document.querySelector("#deviceCount");
 const logList = document.querySelector("#logList");
@@ -101,6 +103,38 @@ function renderDevices(devices) {
   }
 }
 
+function renderOutbox(files) {
+  clearChildren(outboxFileList);
+
+  if (!files?.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty compact";
+    empty.textContent = "No shared files";
+    outboxFileList.append(empty);
+    return;
+  }
+
+  for (const file of files.slice(0, 5)) {
+    const row = document.createElement("div");
+    row.className = "mini-row";
+    const name = document.createElement("span");
+    name.textContent = file.name;
+    const size = document.createElement("strong");
+    size.textContent = formatBytes(file.bytes ?? 0);
+    row.append(name, size);
+    outboxFileList.append(row);
+  }
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  if (mb < 1024) return `${mb.toFixed(1)} MB`;
+  return `${(mb / 1024).toFixed(1)} GB`;
+}
+
 function renderLogs(logs) {
   clearChildren(logList);
   logCount.textContent = String(logs?.length ?? 0);
@@ -141,6 +175,7 @@ function render(state) {
   setText(port, state?.port);
   setText(pairingToken, state?.pairing_token);
   renderBaseUrls(state?.base_urls ?? []);
+  renderOutbox(state?.outbox_files ?? []);
   renderDevices(state?.trusted_devices ?? []);
   renderLogs(state?.request_log ?? []);
   showError(state?.startup_error ?? "");
@@ -169,6 +204,10 @@ toggleServerButton.addEventListener("click", async () => {
 copyTokenButton.addEventListener("click", () => api.copy(currentState?.pairing_token ?? ""));
 openInboxButton.addEventListener("click", () => api.openInbox());
 openOutboxButton.addEventListener("click", () => api.openOutbox());
+addOutboxFilesButton.addEventListener("click", async () => {
+  const result = await api.addFilesToOutbox();
+  render(result.state);
+});
 
 refresh();
 refreshTimer = setInterval(refresh, 2500);

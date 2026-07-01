@@ -46,6 +46,11 @@ Endpoint awal:
 - `GET /pair`
 - `POST /api/devices/register`
 - `GET /api/server/state`
+- `POST /api/intent`
+- `POST /api/files`
+- `GET /api/clipboard`
+- `GET /api/request-files`
+- `GET /api/request-files/download`
 
 Runtime files yang dibuat saat server dijalankan:
 
@@ -78,6 +83,8 @@ UI awal:
 - revoke trusted device
 - activity log
 - open inbox/outbox
+- add files to outbox
+- outbox file preview
 
 Catatan:
 

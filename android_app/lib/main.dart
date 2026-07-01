@@ -43,6 +43,8 @@ class _HomeScreenState extends State<HomeScreen> {
   final _baseUrlController =
       TextEditingController(text: 'http://192.168.1.10:8765');
   final _pairingTokenController = TextEditingController();
+  final _urlController = TextEditingController(text: 'https://example.com');
+  final _clipboardController = TextEditingController();
 
   bool _busy = false;
   int _tabIndex = 0;
@@ -53,6 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _deviceName = 'Android device';
   String _pcName = '';
   List<String> _baseUrls = const [];
+  List<_PcRequestFile> _requestFiles = const [];
 
   bool get _isTrusted =>
       _deviceId.isNotEmpty && _deviceToken.isNotEmpty && _pcId.isNotEmpty;
@@ -60,6 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _prefs.setMethodCallHandler(_handleNativeCall);
     _bootstrap();
   }
 
@@ -67,7 +71,19 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _baseUrlController.dispose();
     _pairingTokenController.dispose();
+    _urlController.dispose();
+    _clipboardController.dispose();
     super.dispose();
+  }
+
+  Future<dynamic> _handleNativeCall(MethodCall call) async {
+    if (call.method == 'nativeStatus') {
+      if (mounted) {
+        setState(() =>
+            _status = call.arguments?.toString() ?? 'Native action finished');
+      }
+    }
+    return null;
   }
 
   Future<void> _bootstrap() async {
@@ -200,11 +216,112 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<Map<String, dynamic>> _getJson(String path) async {
+  Future<void> _sendUrl() async {
+    await _run('Opening URL on PC', () async {
+      await _postJson('/api/intent', {
+        'type': 'url',
+        'source': 'android',
+        'payload': {'url': _urlController.text.trim()},
+      });
+      return 'URL sent to PC';
+    });
+  }
+
+  Future<void> _readPhoneClipboard() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    setState(() {
+      _clipboardController.text = data?.text ?? '';
+      _status = _clipboardController.text.isEmpty
+          ? 'Phone clipboard is empty'
+          : 'Phone clipboard loaded';
+    });
+  }
+
+  Future<void> _sendClipboard() async {
+    await _run('Sending clipboard to PC', () async {
+      await _postJson('/api/intent', {
+        'type': 'clipboard',
+        'source': 'android',
+        'payload': {'text': _clipboardController.text},
+      });
+      return 'Clipboard sent to PC';
+    });
+  }
+
+  Future<void> _pullPcClipboard() async {
+    await _run('Reading PC clipboard', () async {
+      final result = await _getJson('/api/clipboard', authorized: true);
+      final text = result['text']?.toString() ?? '';
+      await Clipboard.setData(ClipboardData(text: text));
+      setState(() => _clipboardController.text = text);
+      return text.isEmpty
+          ? 'PC clipboard is empty'
+          : 'PC clipboard copied to phone';
+    });
+  }
+
+  Future<void> _sendCommand(String commandId) async {
+    await _run('Sending command', () async {
+      await _postJson('/api/intent', {
+        'type': 'command',
+        'source': 'android',
+        'payload': {'command_id': commandId},
+      });
+      return 'Command sent: $commandId';
+    });
+  }
+
+  Future<void> _pickAndUploadFiles() async {
+    if (!_isTrusted) {
+      setState(() => _status = 'Trust this phone first');
+      return;
+    }
+    await _prefs.invokeMethod('pickAndUploadFiles', {
+      'baseUrl': _normalizedBaseUrl(),
+      'deviceId': _deviceId,
+      'deviceToken': _deviceToken,
+    });
+    setState(() => _status = 'Choose file(s) to send');
+  }
+
+  Future<void> _loadRequestFiles() async {
+    await _run('Loading PC files', () async {
+      final result = await _getJson('/api/request-files', authorized: true);
+      final files = (result['files'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .map(_PcRequestFile.fromJson)
+          .toList();
+      setState(() => _requestFiles = files);
+      return files.isEmpty
+          ? 'No PC files available'
+          : '${files.length} PC file(s)';
+    });
+  }
+
+  Future<void> _downloadRequestFile(_PcRequestFile file) async {
+    await _run('Requesting ${file.name}', () async {
+      final url =
+          '${_normalizedBaseUrl()}/api/request-files/download?filename=${Uri.encodeQueryComponent(file.name)}';
+      await _prefs.invokeMethod('downloadToDownloads', {
+        'url': url,
+        'filename': file.name,
+        'deviceId': _deviceId,
+        'deviceToken': _deviceToken,
+      });
+      return 'Download started: ${file.name}';
+    });
+  }
+
+  Future<Map<String, dynamic>> _getJson(String path,
+      {bool authorized = false}) async {
     final client = HttpClient();
     try {
       final request =
           await client.getUrl(_uri(path)).timeout(const Duration(seconds: 5));
+      if (authorized) {
+        request.headers.add('X-Device-Id', _deviceId);
+        request.headers.add('X-Device-Token', _deviceToken);
+      }
       final response =
           await request.close().timeout(const Duration(seconds: 8));
       return _readJson(response);
@@ -275,13 +392,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final pages = [
       _buildConnectPage(),
-      _PlaceholderPage(
-        title: 'Quick Actions',
-        icon: Icons.bolt_rounded,
-        lines: const [
-          'NFC actions, file, clipboard, and PC commands land here in later phases.'
-        ],
-      ),
+      _buildActionsPage(),
       _PlaceholderPage(
         title: 'Remote',
         icon: Icons.touch_app_rounded,
@@ -444,6 +555,212 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
     );
   }
+
+  Widget _buildActionsPage() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _SectionCard(
+          title: 'Files',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  FilledButton.icon(
+                    onPressed:
+                        _busy || !_isTrusted ? null : _pickAndUploadFiles,
+                    icon: const Icon(Icons.upload_file_rounded),
+                    label: const Text('Send File'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: _busy || !_isTrusted ? null : _loadRequestFiles,
+                    icon: const Icon(Icons.folder_copy_rounded),
+                    label: const Text('Request Files'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (_requestFiles.isEmpty)
+                const Text('No PC files loaded',
+                    style: TextStyle(color: Color(0xFF9AA8AF)))
+              else
+                for (final file in _requestFiles)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.insert_drive_file_rounded),
+                    title: Text(file.name),
+                    subtitle: Text(_formatBytes(file.bytes)),
+                    trailing: IconButton(
+                      tooltip: 'Download',
+                      onPressed:
+                          _busy ? null : () => _downloadRequestFile(file),
+                      icon: const Icon(Icons.download_rounded),
+                    ),
+                  ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _SectionCard(
+          title: 'Clipboard',
+          child: Column(
+            children: [
+              TextField(
+                controller: _clipboardController,
+                decoration: const InputDecoration(
+                  labelText: 'Clipboard Text',
+                  prefixIcon: Icon(Icons.content_paste_rounded),
+                ),
+                minLines: 2,
+                maxLines: 5,
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : _readPhoneClipboard,
+                    icon: const Icon(Icons.phone_android_rounded),
+                    label: const Text('Read Phone'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: _busy || !_isTrusted ? null : _sendClipboard,
+                    icon: const Icon(Icons.send_rounded),
+                    label: const Text('Send to PC'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: _busy || !_isTrusted ? null : _pullPcClipboard,
+                    icon: const Icon(Icons.download_rounded),
+                    label: const Text('Pull from PC'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _SectionCard(
+          title: 'URL',
+          child: Column(
+            children: [
+              TextField(
+                controller: _urlController,
+                decoration: const InputDecoration(
+                  labelText: 'URL',
+                  prefixIcon: Icon(Icons.public_rounded),
+                ),
+                keyboardType: TextInputType.url,
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.icon(
+                  onPressed: _busy || !_isTrusted ? null : _sendUrl,
+                  icon: const Icon(Icons.open_in_browser_rounded),
+                  label: const Text('Open on PC'),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _SectionCard(
+          title: 'PC Commands',
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _CommandButton(
+                  label: 'Open Inbox',
+                  icon: Icons.inventory_2_rounded,
+                  onTap: () => _sendCommand('open_inbox'),
+                  busy: _busy,
+                  trusted: _isTrusted),
+              _CommandButton(
+                  label: 'Downloads',
+                  icon: Icons.folder_rounded,
+                  onTap: () => _sendCommand('open_downloads'),
+                  busy: _busy,
+                  trusted: _isTrusted),
+              _CommandButton(
+                  label: 'Chrome',
+                  icon: Icons.language_rounded,
+                  onTap: () => _sendCommand('open_chrome'),
+                  busy: _busy,
+                  trusted: _isTrusted),
+              _CommandButton(
+                  label: 'Lock',
+                  icon: Icons.lock_rounded,
+                  onTap: () => _sendCommand('lock_pc'),
+                  busy: _busy,
+                  trusted: _isTrusted),
+              _CommandButton(
+                  label: 'Sleep',
+                  icon: Icons.bedtime_rounded,
+                  onTap: () => _sendCommand('sleep_pc'),
+                  busy: _busy,
+                  trusted: _isTrusted),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PcRequestFile {
+  const _PcRequestFile({
+    required this.name,
+    required this.bytes,
+  });
+
+  final String name;
+  final int bytes;
+
+  factory _PcRequestFile.fromJson(Map<String, dynamic> json) {
+    return _PcRequestFile(
+      name: json['name']?.toString() ?? 'file',
+      bytes: int.tryParse(json['bytes']?.toString() ?? '') ?? 0,
+    );
+  }
+}
+
+class _CommandButton extends StatelessWidget {
+  const _CommandButton({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    required this.busy,
+    required this.trusted,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool busy;
+  final bool trusted;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: busy || !trusted ? null : onTap,
+      icon: Icon(icon),
+      label: Text(label),
+    );
+  }
+}
+
+String _formatBytes(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  final kb = bytes / 1024;
+  if (kb < 1024) return '${kb.toStringAsFixed(1)} KB';
+  final mb = kb / 1024;
+  if (mb < 1024) return '${mb.toStringAsFixed(1)} MB';
+  return '${(mb / 1024).toStringAsFixed(1)} GB';
 }
 
 class _HeroPanel extends StatelessWidget {

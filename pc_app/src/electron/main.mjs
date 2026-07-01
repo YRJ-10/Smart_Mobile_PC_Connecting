@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ipcMain, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SmartMpcServer } from "../server.mjs";
@@ -78,4 +78,13 @@ ipcMain.handle("ui:openInbox", async () => {
 
 ipcMain.handle("ui:openOutbox", async () => {
   return shell.openPath(server.config.outbox_dir);
+});
+
+ipcMain.handle("ui:addFilesToOutbox", async () => {
+  const selection = await dialog.showOpenDialog(mainWindow, {
+    title: "Add files to outbox",
+    properties: ["openFile", "multiSelections"]
+  });
+  if (selection.canceled) return { state: server.state(), copied: [] };
+  return server.addFilesToOutbox(selection.filePaths);
 });
