@@ -40,6 +40,19 @@ Fitur tambahan:
 - NFC lock PC.
 - NFC sleep PC.
 
+## Fase 7: Remote Control Live
+
+Fitur tambahan:
+
+- connect/disconnect remote control ke PC
+- trackpad mouse move
+- left/right click
+- scroll up/down
+- live typing
+- special keys
+- media play/pause
+- zoom in/out
+
 ## Jalankan
 
 ```powershell

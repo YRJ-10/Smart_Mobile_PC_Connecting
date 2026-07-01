@@ -27,3 +27,22 @@ Catatan:
 - Worker tidak menjadi security authority utama.
 - Worker menerima command yang sudah divalidasi oleh `pc_app`.
 - Detail transport final akan mengikuti `shared_protocol`.
+
+## Fase 7: Remote Control Worker
+
+Dependency awal:
+
+```powershell
+pip install -r requirements.txt
+```
+
+Command yang dijalankan:
+
+- mouse move
+- mouse click
+- scroll
+- type text
+- special key
+- zoom
+- media play/pause
+- touch down/move/up

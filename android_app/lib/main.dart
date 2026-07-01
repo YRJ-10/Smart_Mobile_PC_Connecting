@@ -45,16 +45,23 @@ class _HomeScreenState extends State<HomeScreen> {
   final _pairingTokenController = TextEditingController();
   final _urlController = TextEditingController(text: 'https://example.com');
   final _clipboardController = TextEditingController();
+  final _liveTextController = TextEditingController();
 
   bool _busy = false;
+  bool _remoteConnected = false;
   int _tabIndex = 0;
   String _status = 'Ready';
+  String _remoteStatus = 'Remote disconnected';
   String _deviceId = '';
   String _deviceToken = '';
   String _pcId = '';
   String _deviceName = 'Android device';
   String _pcName = '';
   String _quickAction = 'send_file';
+  String _lastLiveText = '';
+  Socket? _controlSocket;
+  Offset? _lastPointerPosition;
+  DateTime _lastMoveAt = DateTime.fromMillisecondsSinceEpoch(0);
   List<String> _baseUrls = const [];
   List<_PcRequestFile> _requestFiles = const [];
 
@@ -70,10 +77,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _controlSocket?.destroy();
     _baseUrlController.dispose();
     _pairingTokenController.dispose();
     _urlController.dispose();
     _clipboardController.dispose();
+    _liveTextController.dispose();
     super.dispose();
   }
 
@@ -344,6 +353,133 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Future<void> _connectRemote() async {
+    if (!_isTrusted) {
+      setState(() => _remoteStatus = 'Trust this phone first');
+      return;
+    }
+
+    final uri = Uri.tryParse(_normalizedBaseUrl());
+    final host = uri?.host ?? '';
+    if (host.isEmpty) {
+      setState(() => _remoteStatus = 'PC address is invalid');
+      return;
+    }
+
+    setState(() => _remoteStatus = 'Connecting remote');
+    try {
+      final socket =
+          await Socket.connect(host, 8080, timeout: const Duration(seconds: 5));
+      socket.setOption(SocketOption.tcpNoDelay, true);
+      socket.listen(
+        (_) {},
+        onDone: () {
+          if (mounted) {
+            setState(() {
+              _remoteConnected = false;
+              _remoteStatus = 'Remote disconnected';
+            });
+          }
+        },
+        onError: (Object error) {
+          if (mounted) {
+            setState(() {
+              _remoteConnected = false;
+              _remoteStatus = 'Remote error: $error';
+            });
+          }
+        },
+        cancelOnError: true,
+      );
+
+      _controlSocket?.destroy();
+      _controlSocket = socket;
+      _sendRawControl({
+        'type': 'auth',
+        'device_id': _deviceId,
+        'device_token': _deviceToken,
+      });
+      setState(() {
+        _remoteConnected = true;
+        _remoteStatus = 'Remote connected';
+      });
+    } catch (error) {
+      setState(() {
+        _remoteConnected = false;
+        _remoteStatus = 'Remote connect failed: $error';
+      });
+    }
+  }
+
+  void _disconnectRemote() {
+    _controlSocket?.destroy();
+    _controlSocket = null;
+    setState(() {
+      _remoteConnected = false;
+      _remoteStatus = 'Remote disconnected';
+    });
+  }
+
+  void _sendRemoteCommand(Map<String, Object?> command) {
+    if (!_remoteConnected || _controlSocket == null) {
+      setState(() => _remoteStatus = 'Connect remote first');
+      return;
+    }
+    _sendRawControl(command);
+  }
+
+  void _sendRawControl(Map<String, Object?> message) {
+    _controlSocket?.write('${jsonEncode(message)}\n');
+  }
+
+  void _onTrackpadPointerDown(PointerDownEvent event) {
+    _lastPointerPosition = event.localPosition;
+  }
+
+  void _onTrackpadPointerMove(PointerMoveEvent event) {
+    final previous = _lastPointerPosition;
+    _lastPointerPosition = event.localPosition;
+    if (previous == null) return;
+
+    final now = DateTime.now();
+    if (now.difference(_lastMoveAt).inMilliseconds < 12) return;
+    _lastMoveAt = now;
+
+    final delta = event.localPosition - previous;
+    if (delta.distance < 0.4) return;
+    _sendRemoteCommand({
+      'type': 'MOUSE_MOVE',
+      'dx': delta.dx,
+      'dy': delta.dy,
+    });
+  }
+
+  void _onTrackpadPointerUp(PointerUpEvent event) {
+    _lastPointerPosition = null;
+  }
+
+  void _onLiveTextChanged(String value) {
+    if (!_remoteConnected) {
+      _lastLiveText = value;
+      return;
+    }
+
+    if (value.length > _lastLiveText.length &&
+        value.startsWith(_lastLiveText)) {
+      _sendRemoteCommand({
+        'type': 'TYPE_TEXT',
+        'text': value.substring(_lastLiveText.length),
+      });
+    } else if (value.length < _lastLiveText.length &&
+        _lastLiveText.startsWith(value)) {
+      final count = _lastLiveText.length - value.length;
+      for (var i = 0; i < count; i += 1) {
+        _sendRemoteCommand({'type': 'SPECIAL_KEY', 'key': 'backspace'});
+      }
+    }
+    _lastLiveText = value;
+  }
+
   Future<Map<String, dynamic>> _getJson(String path,
       {bool authorized = false}) async {
     final client = HttpClient();
@@ -437,13 +573,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final pages = [
       _buildConnectPage(),
       _buildActionsPage(),
-      _PlaceholderPage(
-        title: 'Remote',
-        icon: Icons.touch_app_rounded,
-        lines: const [
-          'Trackpad, keyboard, voice typing, and media controls land here in later phases.'
-        ],
-      ),
+      _buildRemotePage(),
       _PlaceholderPage(
         title: 'Mirror',
         icon: Icons.screenshot_monitor_rounded,
@@ -609,7 +739,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             children: [
               DropdownButtonFormField<String>(
-                value: _quickAction,
+                initialValue: _quickAction,
                 decoration: const InputDecoration(
                   labelText: 'Quick Action',
                   prefixIcon: Icon(Icons.nfc_rounded),
@@ -792,6 +922,240 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
     );
   }
+
+  Widget _buildRemotePage() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _SectionCard(
+          title: 'Remote Session',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  _StateChip(
+                    label: _remoteConnected ? 'Connected' : 'Offline',
+                    active: _remoteConnected,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(_remoteStatus)),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  FilledButton.icon(
+                    onPressed: _remoteConnected ? null : _connectRemote,
+                    icon: const Icon(Icons.play_arrow_rounded),
+                    label: const Text('Connect'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _remoteConnected ? _disconnectRemote : null,
+                    icon: const Icon(Icons.stop_rounded),
+                    label: const Text('Disconnect'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _SectionCard(
+          title: 'Trackpad',
+          child: Column(
+            children: [
+              Listener(
+                onPointerDown: _onTrackpadPointerDown,
+                onPointerMove: _onTrackpadPointerMove,
+                onPointerUp: _onTrackpadPointerUp,
+                child: Container(
+                  height: 260,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: const Color(0xFF0C1012),
+                    border: Border.all(color: const Color(0xFF2D3B43)),
+                  ),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.touch_app_rounded,
+                    size: 44,
+                    color: Color(0xFF65D6A6),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _RemoteButton(
+                    label: 'Left',
+                    icon: Icons.ads_click_rounded,
+                    onTap: () => _sendRemoteCommand({
+                      'type': 'MOUSE_CLICK',
+                      'button': 'left',
+                    }),
+                  ),
+                  _RemoteButton(
+                    label: 'Right',
+                    icon: Icons.touch_app_rounded,
+                    onTap: () => _sendRemoteCommand({
+                      'type': 'MOUSE_CLICK',
+                      'button': 'right',
+                    }),
+                  ),
+                  _RemoteButton(
+                    label: 'Scroll Up',
+                    icon: Icons.keyboard_arrow_up_rounded,
+                    onTap: () => _sendRemoteCommand({
+                      'type': 'SCROLL',
+                      'dy': 1,
+                    }),
+                  ),
+                  _RemoteButton(
+                    label: 'Scroll Down',
+                    icon: Icons.keyboard_arrow_down_rounded,
+                    onTap: () => _sendRemoteCommand({
+                      'type': 'SCROLL',
+                      'dy': -1,
+                    }),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _SectionCard(
+          title: 'Keyboard',
+          child: Column(
+            children: [
+              TextField(
+                controller: _liveTextController,
+                decoration: const InputDecoration(
+                  labelText: 'Live Typing',
+                  prefixIcon: Icon(Icons.keyboard_rounded),
+                ),
+                minLines: 1,
+                maxLines: 4,
+                onChanged: _onLiveTextChanged,
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _SpecialKeyButton(
+                      label: 'Alt Tab',
+                      keyId: 'alttab',
+                      send: _sendRemoteCommand),
+                  _SpecialKeyButton(
+                      label: 'Enter', keyId: 'enter', send: _sendRemoteCommand),
+                  _SpecialKeyButton(
+                      label: 'Backspace',
+                      keyId: 'backspace',
+                      send: _sendRemoteCommand),
+                  _SpecialKeyButton(
+                      label: 'Refresh', keyId: 'f5', send: _sendRemoteCommand),
+                  _SpecialKeyButton(
+                      label: 'Copy', keyId: 'copy', send: _sendRemoteCommand),
+                  _SpecialKeyButton(
+                      label: 'Paste', keyId: 'paste', send: _sendRemoteCommand),
+                  _SpecialKeyButton(
+                      label: 'Back',
+                      keyId: 'browserback',
+                      send: _sendRemoteCommand),
+                  _SpecialKeyButton(
+                      label: 'Forward',
+                      keyId: 'browserforward',
+                      send: _sendRemoteCommand),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _SectionCard(
+          title: 'Media',
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _RemoteButton(
+                label: 'Play Pause',
+                icon: Icons.play_circle_rounded,
+                onTap: () => _sendRemoteCommand({
+                  'type': 'MEDIA',
+                  'action': 'playpause',
+                }),
+              ),
+              _RemoteButton(
+                label: 'Zoom In',
+                icon: Icons.zoom_in_rounded,
+                onTap: () => _sendRemoteCommand({
+                  'type': 'ZOOM',
+                  'delta': 1,
+                }),
+              ),
+              _RemoteButton(
+                label: 'Zoom Out',
+                icon: Icons.zoom_out_rounded,
+                onTap: () => _sendRemoteCommand({
+                  'type': 'ZOOM',
+                  'delta': -1,
+                }),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RemoteButton extends StatelessWidget {
+  const _RemoteButton({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon),
+      label: Text(label),
+    );
+  }
+}
+
+class _SpecialKeyButton extends StatelessWidget {
+  const _SpecialKeyButton({
+    required this.label,
+    required this.keyId,
+    required this.send,
+  });
+
+  final String label;
+  final String keyId;
+  final void Function(Map<String, Object?> command) send;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: () => send({'type': 'SPECIAL_KEY', 'key': keyId}),
+      child: Text(label),
+    );
+  }
 }
 
 class _PcRequestFile {
@@ -876,7 +1240,7 @@ class _HeroPanel extends StatelessWidget {
                 width: 44,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(8),
-                  color: colors.primary.withOpacity(0.12),
+                  color: colors.primary.withValues(alpha: 0.12),
                 ),
                 child: Icon(Icons.devices_rounded, color: colors.primary),
               ),
@@ -952,7 +1316,7 @@ class _StateChip extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.7)),
+        border: Border.all(color: color.withValues(alpha: 0.7)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: Text(

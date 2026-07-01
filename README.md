@@ -21,6 +21,7 @@ Dokumen awal:
 - [Phase 4 Android App Core](docs/PHASE_4_ANDROID_APP_CORE.md)
 - [Phase 5 File Clipboard Quick Actions](docs/PHASE_5_FILE_CLIPBOARD_QUICK_ACTIONS.md)
 - [Phase 6 NFC Integration](docs/PHASE_6_NFC_INTEGRATION.md)
+- [Phase 7 Remote Control Live](docs/PHASE_7_REMOTE_CONTROL_LIVE.md)
 
 Struktur modul:
 

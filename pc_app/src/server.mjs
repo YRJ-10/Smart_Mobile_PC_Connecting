@@ -21,6 +21,7 @@ import {
 } from "./constants.mjs";
 import { baseUrls, localIps } from "./network.mjs";
 import { createDeviceToken, loadOrCreateConfig, saveConfig } from "./config.mjs";
+import { ControlServer } from "./control-server.mjs";
 import { RequestLog } from "./request-log.mjs";
 
 function safeFilename(name) {
@@ -150,12 +151,14 @@ async function openChrome() {
 export class SmartMpcServer {
   #config;
   #requestLog;
+  #controlServer;
   #server = null;
   #startedAt = null;
 
   constructor({ config = loadOrCreateConfig(), requestLog = new RequestLog() } = {}) {
     this.#config = config;
     this.#requestLog = requestLog;
+    this.#controlServer = new ControlServer({ config: this.#config, requestLog: this.#requestLog });
   }
 
   get config() {
@@ -182,6 +185,7 @@ export class SmartMpcServer {
       inbox_dir: this.#config.inbox_dir,
       outbox_dir: this.#config.outbox_dir,
       outbox_files: listFiles(this.#config.outbox_dir),
+      control: this.#controlServer.state(),
       trusted_devices: Object.entries(this.#config.trusted_devices ?? {}).map(([id, device]) => ({
         id,
         name: device.name,
@@ -217,13 +221,20 @@ export class SmartMpcServer {
       server.listen(port, host, () => {
         this.#startedAt = new Date().toISOString();
         this.#requestLog.add("server_started", { port });
-        resolve(this.state());
+        this.#controlServer
+          .start()
+          .catch((error) => this.#requestLog.add("control_error", { error: error.message }))
+          .finally(() => resolve(this.state()));
       });
     });
   }
 
-  stop() {
-    if (!this.#server) return Promise.resolve(this.state());
+  async stop() {
+    await this.#controlServer
+      .stop()
+      .catch((error) => this.#requestLog.add("control_error", { error: error.message }));
+
+    if (!this.#server) return this.state();
 
     return new Promise((resolve, reject) => {
       const server = this.#server;

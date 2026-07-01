@@ -52,6 +52,13 @@ Endpoint awal:
 - `GET /api/request-files`
 - `GET /api/request-files/download`
 
+Remote control:
+
+- TCP JSON-lines channel di port `8080`.
+- Pesan pertama harus auth trusted device.
+- Command remote divalidasi di `src/control-server.mjs`.
+- Eksekusi OS diteruskan ke `pc_worker`.
+
 Runtime files yang dibuat saat server dijalankan:
 
 - `config.json`

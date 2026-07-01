@@ -37,10 +37,10 @@
       "legacyResponse": "MOBILEPC_SERVER"
     },
     "control": {
-      "transport": "websocket-or-tcp",
+      "transport": "tcp-json-lines",
       "referencePort": 8080,
-      "path": "/ws/control",
-      "auth": "session"
+      "path": null,
+      "auth": "trusted-device-first-message"
     },
     "audio": {
       "transport": "udp-or-rtp",
@@ -128,7 +128,7 @@
     "unauthorized"
   ],
   "compatibility": {
-    "nfcDeepLink": "nfcinstant://tap",
+    "nfcDeepLink": "smartmpc://tap",
     "legacyPorts": {
       "nfcHttp": 8765,
       "mobilePcControl": 8080,
