@@ -22,6 +22,7 @@ import {
 import { baseUrls, localIps } from "./network.mjs";
 import { createDeviceToken, loadOrCreateConfig, saveConfig } from "./config.mjs";
 import { ControlServer } from "./control-server.mjs";
+import { ScreenServer } from "./screen-server.mjs";
 import { RequestLog } from "./request-log.mjs";
 
 function safeFilename(name) {
@@ -152,6 +153,7 @@ export class SmartMpcServer {
   #config;
   #requestLog;
   #controlServer;
+  #screenServer;
   #server = null;
   #startedAt = null;
 
@@ -159,6 +161,7 @@ export class SmartMpcServer {
     this.#config = config;
     this.#requestLog = requestLog;
     this.#controlServer = new ControlServer({ config: this.#config, requestLog: this.#requestLog });
+    this.#screenServer = new ScreenServer({ config: this.#config, requestLog: this.#requestLog });
   }
 
   get config() {
@@ -186,6 +189,7 @@ export class SmartMpcServer {
       outbox_dir: this.#config.outbox_dir,
       outbox_files: listFiles(this.#config.outbox_dir),
       control: this.#controlServer.state(),
+      screen: this.#screenServer.state(),
       trusted_devices: Object.entries(this.#config.trusted_devices ?? {}).map(([id, device]) => ({
         id,
         name: device.name,
@@ -224,6 +228,8 @@ export class SmartMpcServer {
         this.#controlServer
           .start()
           .catch((error) => this.#requestLog.add("control_error", { error: error.message }))
+          .then(() => this.#screenServer.start())
+          .catch((error) => this.#requestLog.add("screen_error", { error: error.message }))
           .finally(() => resolve(this.state()));
       });
     });
@@ -233,6 +239,9 @@ export class SmartMpcServer {
     await this.#controlServer
       .stop()
       .catch((error) => this.#requestLog.add("control_error", { error: error.message }));
+    await this.#screenServer
+      .stop()
+      .catch((error) => this.#requestLog.add("screen_error", { error: error.message }));
 
     if (!this.#server) return this.state();
 

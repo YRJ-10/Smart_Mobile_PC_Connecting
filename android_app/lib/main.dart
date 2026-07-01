@@ -50,10 +50,12 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _busy = false;
   bool _remoteConnected = false;
   bool _audioEnabled = false;
+  bool _mirrorConnected = false;
   int _tabIndex = 0;
   String _status = 'Ready';
   String _remoteStatus = 'Remote disconnected';
   String _audioStatus = 'PC audio off';
+  String _mirrorStatus = 'Mirror disconnected';
   String _deviceId = '';
   String _deviceToken = '';
   String _pcId = '';
@@ -62,6 +64,10 @@ class _HomeScreenState extends State<HomeScreen> {
   String _quickAction = 'send_file';
   String _lastLiveText = '';
   Socket? _controlSocket;
+  Socket? _screenSocket;
+  Uint8List? _screenFrame;
+  List<int> _screenBuffer = [];
+  bool _screenHandshakeDone = false;
   Offset? _lastPointerPosition;
   DateTime _lastMoveAt = DateTime.fromMillisecondsSinceEpoch(0);
   static const int _audioPort = 8081;
@@ -82,6 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _prefs.invokeMethod('stopAudioReceiver');
     _controlSocket?.destroy();
+    _screenSocket?.destroy();
     _baseUrlController.dispose();
     _pairingTokenController.dispose();
     _urlController.dispose();
@@ -416,6 +423,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _disconnectRemote() {
+    if (_mirrorConnected) {
+      _disconnectMirror();
+    }
     if (_audioEnabled) {
       _sendRawControl({
         'type': 'AUDIO_TOGGLE',
@@ -538,6 +548,146 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Future<void> _connectMirror() async {
+    if (!_isTrusted) {
+      setState(() => _mirrorStatus = 'Trust this phone first');
+      return;
+    }
+    if (!_remoteConnected) {
+      await _connectRemote();
+    }
+    if (!_remoteConnected) {
+      setState(() => _mirrorStatus = 'Remote control is required');
+      return;
+    }
+
+    final uri = Uri.tryParse(_normalizedBaseUrl());
+    final host = uri?.host ?? '';
+    if (host.isEmpty) {
+      setState(() => _mirrorStatus = 'PC address is invalid');
+      return;
+    }
+
+    setState(() => _mirrorStatus = 'Connecting mirror');
+    try {
+      final socket =
+          await Socket.connect(host, 8082, timeout: const Duration(seconds: 5));
+      socket.setOption(SocketOption.tcpNoDelay, true);
+      _screenSocket?.destroy();
+      _screenSocket = socket;
+      _screenBuffer = [];
+      _screenHandshakeDone = false;
+      socket.listen(
+        _handleScreenData,
+        onDone: _markMirrorDisconnected,
+        onError: (Object error) {
+          if (mounted) {
+            setState(() {
+              _mirrorConnected = false;
+              _mirrorStatus = 'Mirror error: $error';
+            });
+          }
+        },
+        cancelOnError: true,
+      );
+      socket.write('${jsonEncode({
+            'type': 'auth',
+            'device_id': _deviceId,
+            'device_token': _deviceToken,
+          })}\n');
+      setState(() {
+        _mirrorConnected = true;
+        _mirrorStatus = 'Mirror connected';
+      });
+    } catch (error) {
+      setState(() {
+        _mirrorConnected = false;
+        _mirrorStatus = 'Mirror connect failed: $error';
+      });
+    }
+  }
+
+  void _disconnectMirror() {
+    _screenSocket?.destroy();
+    _screenSocket = null;
+    _screenBuffer = [];
+    _screenHandshakeDone = false;
+    setState(() {
+      _mirrorConnected = false;
+      _mirrorStatus = 'Mirror disconnected';
+    });
+  }
+
+  void _markMirrorDisconnected() {
+    if (!mounted) return;
+    setState(() {
+      _mirrorConnected = false;
+      _mirrorStatus = 'Mirror disconnected';
+    });
+  }
+
+  void _handleScreenData(Uint8List chunk) {
+    _screenBuffer.addAll(chunk);
+
+    if (!_screenHandshakeDone) {
+      final newline = _screenBuffer.indexOf(10);
+      if (newline < 0) return;
+
+      final line = utf8.decode(_screenBuffer.sublist(0, newline));
+      _screenBuffer = _screenBuffer.sublist(newline + 1);
+      final message = jsonDecode(line) as Map<String, dynamic>;
+      if (message['ok'] == false) {
+        setState(() =>
+            _mirrorStatus = message['error']?.toString() ?? 'Mirror denied');
+        _disconnectMirror();
+        return;
+      }
+      _screenHandshakeDone = true;
+    }
+
+    while (_screenBuffer.length >= 4) {
+      final length = (_screenBuffer[0] << 24) |
+          (_screenBuffer[1] << 16) |
+          (_screenBuffer[2] << 8) |
+          _screenBuffer[3];
+      if (length <= 0 || length > 5 * 1024 * 1024) {
+        setState(() => _mirrorStatus = 'Invalid screen frame');
+        _disconnectMirror();
+        return;
+      }
+      if (_screenBuffer.length < length + 4) return;
+
+      final frame = Uint8List.fromList(_screenBuffer.sublist(4, length + 4));
+      _screenBuffer = _screenBuffer.sublist(length + 4);
+      if (mounted) {
+        setState(() {
+          _screenFrame = frame;
+          _mirrorStatus = 'Mirror receiving';
+        });
+      }
+    }
+  }
+
+  void _sendMirrorTouch(
+    String type,
+    Offset position,
+    BoxConstraints constraints,
+  ) {
+    if (!_remoteConnected) {
+      setState(() => _mirrorStatus = 'Connect mirror control first');
+      return;
+    }
+    final width = constraints.maxWidth <= 0 ? 1.0 : constraints.maxWidth;
+    final height = constraints.maxHeight <= 0 ? 1.0 : constraints.maxHeight;
+    final rx = (position.dx / width).clamp(0.0, 1.0);
+    final ry = (position.dy / height).clamp(0.0, 1.0);
+    _sendRemoteCommand({
+      'type': type,
+      'rx': rx,
+      'ry': ry,
+    });
+  }
+
   Future<Map<String, dynamic>> _getJson(String path,
       {bool authorized = false}) async {
     final client = HttpClient();
@@ -632,13 +782,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _buildConnectPage(),
       _buildActionsPage(),
       _buildRemotePage(),
-      _PlaceholderPage(
-        title: 'Mirror',
-        icon: Icons.screenshot_monitor_rounded,
-        lines: const [
-          'Screen mirror, touch mapping, and audio controls land here in later phases.'
-        ],
-      ),
+      _buildMirrorPage(),
     ];
 
     return Scaffold(
@@ -1188,6 +1332,93 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
     );
   }
+
+  Widget _buildMirrorPage() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _SectionCard(
+          title: 'Screen Mirror',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  _StateChip(
+                    label: _mirrorConnected ? 'Connected' : 'Offline',
+                    active: _mirrorConnected,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(_mirrorStatus)),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  FilledButton.icon(
+                    onPressed: _mirrorConnected ? null : _connectMirror,
+                    icon: const Icon(Icons.screenshot_monitor_rounded),
+                    label: const Text('Connect'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _mirrorConnected ? _disconnectMirror : null,
+                    icon: const Icon(Icons.stop_rounded),
+                    label: const Text('Disconnect'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _SectionCard(
+          title: 'Display',
+          child: AspectRatio(
+            aspectRatio: 16 / 9,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return Listener(
+                    onPointerDown: (event) => _sendMirrorTouch(
+                        'TOUCH_DOWN', event.localPosition, constraints),
+                    onPointerMove: (event) => _sendMirrorTouch(
+                        'TOUCH_MOVE', event.localPosition, constraints),
+                    onPointerUp: (event) => _sendMirrorTouch(
+                        'TOUCH_UP', event.localPosition, constraints),
+                    child: InteractiveViewer(
+                      minScale: 1,
+                      maxScale: 3,
+                      child: SizedBox.expand(
+                        child: ColoredBox(
+                          color: const Color(0xFF0C1012),
+                          child: _screenFrame == null
+                              ? const Center(
+                                  child: Icon(
+                                    Icons.desktop_windows_rounded,
+                                    size: 46,
+                                    color: Color(0xFF65D6A6),
+                                  ),
+                                )
+                              : Image.memory(
+                                  _screenFrame!,
+                                  gaplessPlayback: true,
+                                  fit: BoxFit.fill,
+                                ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _RemoteButton extends StatelessWidget {
@@ -1421,49 +1652,6 @@ class _InfoRow extends StatelessWidget {
           ),
           Expanded(child: SelectableText(value.isEmpty ? '-' : value)),
         ],
-      ),
-    );
-  }
-}
-
-class _PlaceholderPage extends StatelessWidget {
-  const _PlaceholderPage({
-    required this.title,
-    required this.icon,
-    required this.lines,
-  });
-
-  final String title;
-  final IconData icon;
-  final List<String> lines;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 44, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 14),
-            Text(
-              title,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w700),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            for (final line in lines)
-              Text(
-                line,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Color(0xFF9AA8AF)),
-              ),
-          ],
-        ),
       ),
     );
   }

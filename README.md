@@ -23,6 +23,7 @@ Dokumen awal:
 - [Phase 6 NFC Integration](docs/PHASE_6_NFC_INTEGRATION.md)
 - [Phase 7 Remote Control Live](docs/PHASE_7_REMOTE_CONTROL_LIVE.md)
 - [Phase 8 Audio Streaming](docs/PHASE_8_AUDIO_STREAMING.md)
+- [Phase 9 Screen Mirror](docs/PHASE_9_SCREEN_MIRROR.md)
 
 Struktur modul:
 

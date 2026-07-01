@@ -61,6 +61,16 @@ Fitur tambahan:
 - playback PCM via `AudioTrack`
 - PC Audio toggle di tab Remote
 
+## Fase 9: Screen Mirror
+
+Fitur tambahan:
+
+- screen mirror TCP client
+- JPEG frame rendering
+- Mirror tab
+- touch down/move/up mapping ke PC
+- pinch/zoom viewer
+
 ## Jalankan
 
 ```powershell

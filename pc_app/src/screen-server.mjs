@@ -1,0 +1,155 @@
+import { spawn } from "node:child_process";
+import { createServer } from "node:net";
+import { resolve } from "node:path";
+import { APP_DIR, saveConfig } from "./config.mjs";
+
+const SCREEN_PORT = 8082;
+
+export class ScreenServer {
+  #config;
+  #requestLog;
+  #server = null;
+  #clients = new Set();
+  #streams = new Map();
+
+  constructor({ config, requestLog }) {
+    this.#config = config;
+    this.#requestLog = requestLog;
+  }
+
+  get running() {
+    return Boolean(this.#server);
+  }
+
+  state() {
+    return {
+      running: this.running,
+      port: SCREEN_PORT,
+      clients: this.#clients.size
+    };
+  }
+
+  start() {
+    if (this.#server) return Promise.resolve(this.state());
+
+    this.#server = createServer((socket) => this.#handleSocket(socket));
+    return new Promise((resolveStart, reject) => {
+      const server = this.#server;
+      server.once("error", (error) => {
+        this.#server = null;
+        reject(error);
+      });
+      server.listen(SCREEN_PORT, this.#config.host ?? "0.0.0.0", () => {
+        this.#requestLog.add("screen_started", { port: SCREEN_PORT });
+        resolveStart(this.state());
+      });
+    });
+  }
+
+  stop() {
+    for (const socket of this.#clients) socket.destroy();
+    this.#clients.clear();
+    for (const stream of this.#streams.values()) stream.kill();
+    this.#streams.clear();
+
+    if (!this.#server) return Promise.resolve(this.state());
+    return new Promise((resolveStop, reject) => {
+      const server = this.#server;
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        this.#server = null;
+        this.#requestLog.add("screen_stopped");
+        resolveStop(this.state());
+      });
+    });
+  }
+
+  #handleSocket(socket) {
+    socket.setNoDelay(true);
+    this.#clients.add(socket);
+
+    let authenticated = false;
+    let buffer = "";
+
+    socket.on("data", (chunk) => {
+      if (authenticated) return;
+
+      buffer += chunk.toString("utf8");
+      const index = buffer.indexOf("\n");
+      if (index < 0) return;
+
+      const line = buffer.slice(0, index).trim();
+      try {
+        const message = JSON.parse(line);
+        authenticated = this.#authenticate(message, socket);
+        if (authenticated) this.#startStream(socket);
+      } catch (error) {
+        this.#sendLine(socket, { ok: false, error: error.message });
+        socket.destroy();
+      }
+    });
+
+    socket.on("close", () => this.#cleanupSocket(socket));
+    socket.on("error", () => this.#cleanupSocket(socket));
+  }
+
+  #authenticate(message, socket) {
+    if (message.type !== "auth") {
+      this.#sendLine(socket, { ok: false, error: "Auth required" });
+      socket.destroy();
+      return false;
+    }
+
+    const deviceId = String(message.device_id ?? "").trim();
+    const deviceToken = String(message.device_token ?? "").trim();
+    const trustedDevice = this.#config.trusted_devices?.[deviceId];
+    if (!trustedDevice || trustedDevice.token !== deviceToken) {
+      this.#requestLog.add("screen_unauthorized");
+      this.#sendLine(socket, { ok: false, error: "Unauthorized" });
+      socket.destroy();
+      return false;
+    }
+
+    trustedDevice.last_seen_at = new Date().toISOString();
+    saveConfig(this.#config);
+    this.#requestLog.add("screen_client_connected", { device: trustedDevice.name ?? deviceId });
+    this.#sendLine(socket, { ok: true, event: "screen_ready", encoding: "jpeg" });
+    return true;
+  }
+
+  #startStream(socket) {
+    const workerPath = resolve(APP_DIR, "..", "pc_worker", "screen_streamer.py");
+    const pythonCommand = process.env.SMART_MPC_PYTHON || "python";
+    const stream = spawn(pythonCommand, [workerPath], {
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+
+    this.#streams.set(socket, stream);
+    stream.stdout.on("data", (chunk) => {
+      if (!socket.destroyed) socket.write(chunk);
+    });
+    stream.stderr.on("data", (chunk) => {
+      this.#requestLog.add("screen_worker_error", { error: chunk.toString("utf8").trim().slice(0, 160) });
+    });
+    stream.on("exit", (code) => {
+      this.#requestLog.add("screen_worker_exit", { code });
+      this.#streams.delete(socket);
+      if (!socket.destroyed) socket.destroy();
+    });
+  }
+
+  #cleanupSocket(socket) {
+    this.#clients.delete(socket);
+    const stream = this.#streams.get(socket);
+    if (stream) stream.kill();
+    this.#streams.delete(socket);
+  }
+
+  #sendLine(socket, payload) {
+    socket.write(`${JSON.stringify(payload)}\n`);
+  }
+}

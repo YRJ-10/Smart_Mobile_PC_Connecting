@@ -48,3 +48,5 @@ Command yang dijalankan:
 - touch down/move/up
 - PC audio loopback capture
 - UDP PCM audio stream
+- screen capture
+- JPEG frame encoding

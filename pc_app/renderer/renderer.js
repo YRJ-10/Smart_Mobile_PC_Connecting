@@ -7,6 +7,7 @@ const errorPanel = document.querySelector("#errorPanel");
 const pcName = document.querySelector("#pcName");
 const port = document.querySelector("#port");
 const controlStatus = document.querySelector("#controlStatus");
+const screenStatus = document.querySelector("#screenStatus");
 const pairingToken = document.querySelector("#pairingToken");
 const copyTokenButton = document.querySelector("#copyTokenButton");
 const baseUrlList = document.querySelector("#baseUrlList");
@@ -177,6 +178,10 @@ function render(state) {
   setText(
     controlStatus,
     state?.control?.running ? `TCP ${state.control.port} / ${state.control.clients} client(s)` : "Stopped"
+  );
+  setText(
+    screenStatus,
+    state?.screen?.running ? `TCP ${state.screen.port} / ${state.screen.clients} client(s)` : "Stopped"
   );
   setText(pairingToken, state?.pairing_token);
   renderBaseUrls(state?.base_urls ?? []);

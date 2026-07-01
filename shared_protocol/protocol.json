@@ -51,11 +51,11 @@
       "auth": "trusted-control-command"
     },
     "screen": {
-      "transport": "websocket-or-tcp",
+      "transport": "tcp-length-prefixed-jpeg",
       "referencePort": 8082,
-      "path": "/ws/screen",
+      "path": null,
       "frameEncoding": "jpeg",
-      "auth": "session"
+      "auth": "trusted-device-first-message"
     }
   },
   "intentTypes": [
