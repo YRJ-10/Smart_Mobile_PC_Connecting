@@ -46,3 +46,5 @@ Command yang dijalankan:
 - zoom
 - media play/pause
 - touch down/move/up
+- PC audio loopback capture
+- UDP PCM audio stream

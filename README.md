@@ -22,6 +22,7 @@ Dokumen awal:
 - [Phase 5 File Clipboard Quick Actions](docs/PHASE_5_FILE_CLIPBOARD_QUICK_ACTIONS.md)
 - [Phase 6 NFC Integration](docs/PHASE_6_NFC_INTEGRATION.md)
 - [Phase 7 Remote Control Live](docs/PHASE_7_REMOTE_CONTROL_LIVE.md)
+- [Phase 8 Audio Streaming](docs/PHASE_8_AUDIO_STREAMING.md)
 
 Struktur modul:
 

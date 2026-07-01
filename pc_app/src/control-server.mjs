@@ -148,7 +148,7 @@ export class ControlServer {
   }
 
   #handleCommand(command, socket) {
-    const normalized = normalizeCommand(command);
+    const normalized = normalizeCommand(command, socket);
     validateCommand(normalized);
     this.#sendToWorker(normalized);
     this.#requestLog.add("remote_command", { command: normalized.type });
@@ -195,10 +195,19 @@ export class ControlServer {
   }
 }
 
-function normalizeCommand(command) {
+function normalizeCommand(command, socket) {
   const type = String(command.type ?? "").trim();
   if (type === "TYPE_TEXT") {
     return { ...command, text: String(command.text ?? "").slice(0, 1000) };
+  }
+  if (type === "AUDIO_TOGGLE") {
+    return {
+      ...command,
+      type,
+      enabled: Boolean(command.enabled),
+      port: Number(command.port ?? 0),
+      target_host: String(command.target_host ?? clientHost(socket)).trim()
+    };
   }
   return { ...command, type };
 }
@@ -215,4 +224,18 @@ function validateCommand(command) {
   if (command.type === "MOUSE_CLICK" && !["left", "right", "middle"].includes(String(command.button ?? "left"))) {
     throw new Error(`Unsupported mouse button: ${command.button}`);
   }
+
+  if (command.type === "AUDIO_TOGGLE" && command.enabled) {
+    if (!command.target_host) throw new Error("Missing audio target host");
+    if (!Number.isInteger(command.port) || command.port < 1024 || command.port > 65535) {
+      throw new Error(`Invalid audio port: ${command.port}`);
+    }
+  }
+}
+
+function clientHost(socket) {
+  const value = String(socket.remoteAddress ?? "").trim();
+  if (value.startsWith("::ffff:")) return value.slice(7);
+  if (value === "::1") return "127.0.0.1";
+  return value;
 }

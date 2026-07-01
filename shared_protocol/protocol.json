@@ -43,12 +43,12 @@
       "auth": "trusted-device-first-message"
     },
     "audio": {
-      "transport": "udp-or-rtp",
+      "transport": "udp-pcm16",
       "referencePort": 8081,
       "sampleRate": 16000,
       "channels": 1,
       "encoding": "pcm_s16le",
-      "auth": "session"
+      "auth": "trusted-control-command"
     },
     "screen": {
       "transport": "websocket-or-tcp",

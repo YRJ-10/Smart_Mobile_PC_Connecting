@@ -58,6 +58,7 @@ Remote control:
 - Pesan pertama harus auth trusted device.
 - Command remote divalidasi di `src/control-server.mjs`.
 - Eksekusi OS diteruskan ke `pc_worker`.
+- Audio toggle memakai control channel untuk start/stop worker audio stream ke Android.
 
 Runtime files yang dibuat saat server dijalankan:
 

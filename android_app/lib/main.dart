@@ -49,9 +49,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   bool _busy = false;
   bool _remoteConnected = false;
+  bool _audioEnabled = false;
   int _tabIndex = 0;
   String _status = 'Ready';
   String _remoteStatus = 'Remote disconnected';
+  String _audioStatus = 'PC audio off';
   String _deviceId = '';
   String _deviceToken = '';
   String _pcId = '';
@@ -62,6 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Socket? _controlSocket;
   Offset? _lastPointerPosition;
   DateTime _lastMoveAt = DateTime.fromMillisecondsSinceEpoch(0);
+  static const int _audioPort = 8081;
   List<String> _baseUrls = const [];
   List<_PcRequestFile> _requestFiles = const [];
 
@@ -77,6 +80,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _prefs.invokeMethod('stopAudioReceiver');
     _controlSocket?.destroy();
     _baseUrlController.dispose();
     _pairingTokenController.dispose();
@@ -412,11 +416,21 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _disconnectRemote() {
+    if (_audioEnabled) {
+      _sendRawControl({
+        'type': 'AUDIO_TOGGLE',
+        'enabled': false,
+        'port': _audioPort,
+      });
+      _prefs.invokeMethod('stopAudioReceiver');
+    }
     _controlSocket?.destroy();
     _controlSocket = null;
     setState(() {
       _remoteConnected = false;
+      _audioEnabled = false;
       _remoteStatus = 'Remote disconnected';
+      _audioStatus = 'PC audio off';
     });
   }
 
@@ -478,6 +492,50 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
     _lastLiveText = value;
+  }
+
+  Future<void> _toggleAudio() async {
+    if (_audioEnabled) {
+      await _stopAudio();
+    } else {
+      await _startAudio();
+    }
+  }
+
+  Future<void> _startAudio() async {
+    if (!_remoteConnected || _controlSocket == null) {
+      setState(() => _audioStatus = 'Connect remote first');
+      return;
+    }
+    try {
+      await _prefs.invokeMethod('startAudioReceiver', {'port': _audioPort});
+      _sendRemoteCommand({
+        'type': 'AUDIO_TOGGLE',
+        'enabled': true,
+        'port': _audioPort,
+      });
+      setState(() {
+        _audioEnabled = true;
+        _audioStatus = 'PC audio on';
+      });
+    } catch (error) {
+      setState(() => _audioStatus = 'Audio failed: $error');
+    }
+  }
+
+  Future<void> _stopAudio() async {
+    if (_remoteConnected && _controlSocket != null) {
+      _sendRemoteCommand({
+        'type': 'AUDIO_TOGGLE',
+        'enabled': false,
+        'port': _audioPort,
+      });
+    }
+    await _prefs.invokeMethod('stopAudioReceiver');
+    setState(() {
+      _audioEnabled = false;
+      _audioStatus = 'PC audio off';
+    });
   }
 
   Future<Map<String, dynamic>> _getJson(String path,
@@ -1081,34 +1139,49 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 14),
         _SectionCard(
           title: 'Media',
-          child: Wrap(
-            spacing: 10,
-            runSpacing: 10,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _RemoteButton(
-                label: 'Play Pause',
-                icon: Icons.play_circle_rounded,
-                onTap: () => _sendRemoteCommand({
-                  'type': 'MEDIA',
-                  'action': 'playpause',
-                }),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  FilledButton.icon(
+                    onPressed: _toggleAudio,
+                    icon: Icon(_audioEnabled
+                        ? Icons.volume_up_rounded
+                        : Icons.volume_off_rounded),
+                    label: Text(_audioEnabled ? 'Stop Audio' : 'PC Audio'),
+                  ),
+                  _RemoteButton(
+                    label: 'Play Pause',
+                    icon: Icons.play_circle_rounded,
+                    onTap: () => _sendRemoteCommand({
+                      'type': 'MEDIA',
+                      'action': 'playpause',
+                    }),
+                  ),
+                  _RemoteButton(
+                    label: 'Zoom In',
+                    icon: Icons.zoom_in_rounded,
+                    onTap: () => _sendRemoteCommand({
+                      'type': 'ZOOM',
+                      'delta': 1,
+                    }),
+                  ),
+                  _RemoteButton(
+                    label: 'Zoom Out',
+                    icon: Icons.zoom_out_rounded,
+                    onTap: () => _sendRemoteCommand({
+                      'type': 'ZOOM',
+                      'delta': -1,
+                    }),
+                  ),
+                ],
               ),
-              _RemoteButton(
-                label: 'Zoom In',
-                icon: Icons.zoom_in_rounded,
-                onTap: () => _sendRemoteCommand({
-                  'type': 'ZOOM',
-                  'delta': 1,
-                }),
-              ),
-              _RemoteButton(
-                label: 'Zoom Out',
-                icon: Icons.zoom_out_rounded,
-                onTap: () => _sendRemoteCommand({
-                  'type': 'ZOOM',
-                  'delta': -1,
-                }),
-              ),
+              const SizedBox(height: 10),
+              Text(_audioStatus,
+                  style: const TextStyle(color: Color(0xFF9AA8AF))),
             ],
           ),
         ),

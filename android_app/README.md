@@ -53,6 +53,14 @@ Fitur tambahan:
 - media play/pause
 - zoom in/out
 
+## Fase 8: Audio Streaming
+
+Fitur tambahan:
+
+- native UDP audio receiver
+- playback PCM via `AudioTrack`
+- PC Audio toggle di tab Remote
+
 ## Jalankan
 
 ```powershell

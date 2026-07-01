@@ -1,6 +1,9 @@
 package com.smartmpc.app
 
 import android.app.DownloadManager
+import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.AudioTrack
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -14,14 +17,21 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONObject
 import java.net.HttpURLConnection
+import java.net.DatagramPacket
+import java.net.DatagramSocket
 import java.net.URL
 import java.net.URLEncoder
+import kotlin.math.max
 
 class MainActivity : FlutterActivity() {
     private val channelName = "smart_mpc/preferences"
     private var channel: MethodChannel? = null
     private var pendingUpload: UploadConfig? = null
     private var latestDeepLink: String? = null
+    @Volatile private var audioRunning = false
+    private var audioThread: Thread? = null
+    private var audioSocket: DatagramSocket? = null
+    private var audioTrack: AudioTrack? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         latestDeepLink = deepLinkFrom(intent)
@@ -101,9 +111,24 @@ class MainActivity : FlutterActivity() {
                         startActivity(Intent(this, NfcLaunchActivity::class.java))
                         result.success(true)
                     }
+                    "startAudioReceiver" -> {
+                        val args = call.arguments as Map<*, *>
+                        val port = (args["port"] as? Number)?.toInt() ?: AUDIO_PORT
+                        startAudioReceiver(port)
+                        result.success(true)
+                    }
+                    "stopAudioReceiver" -> {
+                        stopAudioReceiver()
+                        result.success(true)
+                    }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    override fun onDestroy() {
+        stopAudioReceiver()
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -261,6 +286,70 @@ class MainActivity : FlutterActivity() {
         return manager.enqueue(request)
     }
 
+    private fun startAudioReceiver(port: Int) {
+        stopAudioReceiver()
+        audioRunning = true
+        audioThread = Thread {
+            runCatching {
+                val minBuffer = AudioTrack.getMinBufferSize(
+                    AUDIO_SAMPLE_RATE,
+                    AudioFormat.CHANNEL_OUT_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                )
+                val track = AudioTrack(
+                    AudioManager.STREAM_MUSIC,
+                    AUDIO_SAMPLE_RATE,
+                    AudioFormat.CHANNEL_OUT_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                    max(minBuffer * 4, AUDIO_SAMPLE_RATE),
+                    AudioTrack.MODE_STREAM,
+                )
+                val socket = DatagramSocket(port)
+                audioTrack = track
+                audioSocket = socket
+                track.play()
+
+                val buffer = ByteArray(4096)
+                while (audioRunning) {
+                    val packet = DatagramPacket(buffer, buffer.size)
+                    socket.receive(packet)
+                    if (packet.length > 0) {
+                        track.write(packet.data, 0, packet.length)
+                    }
+                }
+            }.onFailure { error ->
+                runOnUiThread {
+                    channel?.invokeMethod("nativeStatus", "Audio receiver failed: ${error.message ?: "unknown error"}")
+                }
+            }
+            releaseAudioResources()
+        }.apply {
+            name = "smart-mpc-audio"
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun stopAudioReceiver() {
+        audioRunning = false
+        audioSocket?.close()
+        audioThread?.join(500)
+        releaseAudioResources()
+    }
+
+    private fun releaseAudioResources() {
+        audioSocket?.close()
+        audioSocket = null
+        try {
+            audioTrack?.stop()
+        } catch (_: IllegalStateException) {
+        } finally {
+            audioTrack?.release()
+            audioTrack = null
+        }
+        audioThread = null
+    }
+
     private data class UploadConfig(
         val baseUrl: String,
         val deviceId: String,
@@ -269,5 +358,7 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val REQUEST_PICK_FILES = 7291
+        private const val AUDIO_PORT = 8081
+        private const val AUDIO_SAMPLE_RATE = 16000
     }
 }
