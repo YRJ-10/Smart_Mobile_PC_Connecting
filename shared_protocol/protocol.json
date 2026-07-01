@@ -1,0 +1,139 @@
+{
+  "name": "Smart MPC Protocol",
+  "version": "0.1.0",
+  "auth": {
+    "pairingHeader": "X-Pairing-Token",
+    "deviceIdHeader": "X-Device-Id",
+    "deviceTokenHeader": "X-Device-Token",
+    "sessionHeader": "X-Session-Token",
+    "requirements": [
+      "Pairing is required before a phone becomes trusted.",
+      "Trusted device credentials are required for protected HTTP routes.",
+      "Realtime control, audio, and screen channels must be bound to a trusted session."
+    ]
+  },
+  "http": {
+    "basePort": 8765,
+    "routes": [
+      { "method": "GET", "path": "/health", "auth": "none", "purpose": "Server health and PC identity." },
+      { "method": "GET", "path": "/pair", "auth": "none", "purpose": "Pairing info and reachable base URLs." },
+      { "method": "POST", "path": "/api/devices/register", "auth": "pairing", "purpose": "Register trusted phone." },
+      { "method": "POST", "path": "/api/session/start", "auth": "device", "purpose": "Create trusted realtime session." },
+      { "method": "POST", "path": "/api/session/stop", "auth": "session", "purpose": "Stop trusted realtime session." },
+      { "method": "POST", "path": "/api/intent", "auth": "device", "purpose": "Quick actions, URL, clipboard, file-base64, command." },
+      { "method": "POST", "path": "/api/files", "auth": "device", "purpose": "Upload file from Android to PC inbox." },
+      { "method": "GET", "path": "/api/clipboard", "auth": "device", "purpose": "Pull PC clipboard to Android." },
+      { "method": "GET", "path": "/api/request-files", "auth": "device", "purpose": "List PC outbox files." },
+      { "method": "GET", "path": "/api/request-files/download", "auth": "device", "purpose": "Download PC outbox file." }
+    ]
+  },
+  "channels": {
+    "discovery": {
+      "transport": "udp",
+      "referencePort": 8081,
+      "request": "DISCOVER_SMART_MPC",
+      "legacyRequest": "DISCOVER_MOBILEPC",
+      "response": "SMART_MPC_SERVER",
+      "legacyResponse": "MOBILEPC_SERVER"
+    },
+    "control": {
+      "transport": "websocket-or-tcp",
+      "referencePort": 8080,
+      "path": "/ws/control",
+      "auth": "session"
+    },
+    "audio": {
+      "transport": "udp-or-rtp",
+      "referencePort": 8081,
+      "sampleRate": 16000,
+      "channels": 1,
+      "encoding": "pcm_s16le",
+      "auth": "session"
+    },
+    "screen": {
+      "transport": "websocket-or-tcp",
+      "referencePort": 8082,
+      "path": "/ws/screen",
+      "frameEncoding": "jpeg",
+      "auth": "session"
+    }
+  },
+  "intentTypes": [
+    "url",
+    "clipboard",
+    "file",
+    "command",
+    "continue"
+  ],
+  "quickActions": [
+    "send_file",
+    "pull_clipboard",
+    "request_files",
+    "open_chrome",
+    "lock_pc",
+    "sleep_pc"
+  ],
+  "commands": {
+    "pcActions": [
+      "open_inbox",
+      "open_downloads",
+      "open_chrome",
+      "lock_pc",
+      "sleep_pc"
+    ],
+    "remoteControl": [
+      "mouse_move",
+      "mouse_click",
+      "scroll",
+      "type_text",
+      "special_key",
+      "zoom",
+      "media",
+      "audio_toggle",
+      "touch_down",
+      "touch_move",
+      "touch_up"
+    ],
+    "specialKeys": [
+      "alttab",
+      "enter",
+      "backspace",
+      "f5",
+      "copy",
+      "paste",
+      "browserback",
+      "browserforward"
+    ],
+    "mediaActions": [
+      "playpause"
+    ]
+  },
+  "events": [
+    "server_started",
+    "server_stopped",
+    "device_registered",
+    "device_revoked",
+    "session_started",
+    "session_stopped",
+    "intent_received",
+    "file_uploaded",
+    "file_requested",
+    "clipboard_sent",
+    "clipboard_requested",
+    "remote_command",
+    "audio_started",
+    "audio_stopped",
+    "screen_started",
+    "screen_stopped",
+    "unauthorized"
+  ],
+  "compatibility": {
+    "nfcDeepLink": "nfcinstant://tap",
+    "legacyPorts": {
+      "nfcHttp": 8765,
+      "mobilePcControl": 8080,
+      "mobilePcDiscoveryAudio": 8081,
+      "mobilePcScreen": 8082
+    }
+  }
+}
