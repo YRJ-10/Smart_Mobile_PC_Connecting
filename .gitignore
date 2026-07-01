@@ -23,6 +23,10 @@ pnpm-debug.log*
 !.env.example
 *.local
 local.properties
+.local/
+LOCAL_NOTES.md
+*.private.md
+docs/private/
 
 # Flutter / Dart
 .dart_tool/

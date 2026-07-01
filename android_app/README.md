@@ -21,8 +21,8 @@ Tanggung jawab:
 
 Sumber referensi read-only:
 
-- `C:\Users\yeryi\AndroidStudioProjects\NFC_Instan_Action\android_app`
-- `C:\Users\yeryi\AndroidStudioProjects\MobilePCMedia\flutter_client`
+- prototype NFC quick-action Android app
+- prototype media remote Flutter client
 
 Catatan:
 

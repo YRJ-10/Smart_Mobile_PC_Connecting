@@ -20,7 +20,7 @@ Tanggung jawab:
 
 Sumber referensi read-only:
 
-- `C:\Users\yeryi\AndroidStudioProjects\MobilePCMedia\python_server\server.py`
+- prototype media remote Python server implementation
 
 Catatan:
 

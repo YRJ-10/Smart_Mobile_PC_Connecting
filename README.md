@@ -1,9 +1,9 @@
 # Smart MPC
 
-Smart MPC adalah project gabungan baru untuk menyatukan ide dari dua project referensi:
+Smart MPC adalah project gabungan baru untuk menyatukan ide dari dua project referensi lokal:
 
-- `C:\Users\yeryi\AndroidStudioProjects\NFC_Instan_Action`
-- `C:\Users\yeryi\AndroidStudioProjects\MobilePCMedia`
+- prototype NFC quick-action Android/PC
+- prototype mobile-to-PC media remote
 
 Aturan utama:
 

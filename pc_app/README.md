@@ -20,8 +20,8 @@ Tanggung jawab:
 
 Sumber referensi read-only:
 
-- `C:\Users\yeryi\AndroidStudioProjects\NFC_Instan_Action\Pc Local Server`
-- `C:\Users\yeryi\AndroidStudioProjects\MobilePCMedia\python_server`
+- prototype NFC quick-action PC server/app
+- prototype media remote Python server
 
 Catatan:
 

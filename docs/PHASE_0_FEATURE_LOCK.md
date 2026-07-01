@@ -6,16 +6,16 @@ Dokumen ini mengunci cakupan fitur Smart MPC. Tujuannya sederhana: semua fitur d
 
 ## Aturan Source
 
-Project referensi:
+Project referensi lokal:
 
-- `C:\Users\yeryi\AndroidStudioProjects\NFC_Instan_Action`
-- `C:\Users\yeryi\AndroidStudioProjects\MobilePCMedia`
+- prototype NFC quick-action Android/PC
+- prototype mobile-to-PC media remote
 
 Aturan kerja:
 
 - Project referensi hanya dibaca.
 - Jangan edit, format, hapus, rename, atau memindahkan file di project referensi.
-- Jika fitur dibutuhkan, salin bagian yang relevan ke `C:\Users\yeryi\AndroidStudioProjects\Smart_MPC`.
+- Jika fitur dibutuhkan, salin bagian yang relevan ke repository Smart MPC ini.
 - Implementasi baru boleh mengubah struktur, nama modul, dan protokol selama fitur lama tetap ada.
 
 ## Konsep Utama
@@ -28,7 +28,7 @@ Android app <-> jaringan lokal <-> PC local server/app <-> aksi di PC
 
 Mobile menjadi controller, trigger, transfer tool, dan receiver. PC menjadi server, target aksi, streamer, dan pusat trust/auth.
 
-## Sumber Fitur: NFC_Instan_Action
+## Sumber Fitur: Prototype NFC Quick Action
 
 Wajib dipertahankan:
 
@@ -91,7 +91,7 @@ Wajib dipertahankan:
 - Lightweight native launch screen ketika NFC action berjalan.
 - Android file picker dengan multiple file support.
 
-## Sumber Fitur: MobilePCMedia
+## Sumber Fitur: Prototype Mobile-to-PC Media Remote
 
 Wajib dipertahankan:
 
@@ -149,9 +149,9 @@ Wajib dipertahankan:
 Port asal:
 
 - NFC HTTP server: `8765`.
-- MobilePCMedia TCP command: `8080`.
-- MobilePCMedia UDP discovery/audio: `8081`.
-- MobilePCMedia TCP video: `8082`.
+- Media remote TCP command: `8080`.
+- Media remote UDP discovery/audio: `8081`.
+- Media remote TCP video: `8082`.
 
 Desain Smart MPC boleh mengganti port, tapi fungsi channel wajib tetap ada:
 
@@ -197,7 +197,7 @@ Wajib ada:
 - Request log.
 - Permission/toggle untuk fitur berisiko.
 
-Catatan penting: fitur remote-control dari MobilePCMedia tidak boleh tetap menjadi channel bebas tanpa trust. Saat digabung, command live harus hanya diterima dari device trusted.
+Catatan penting: fitur remote-control dari prototype media remote tidak boleh tetap menjadi channel bebas tanpa trust. Saat digabung, command live harus hanya diterima dari device trusted.
 
 ## Checklist Integrasi
 
