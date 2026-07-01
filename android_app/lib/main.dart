@@ -54,6 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _pcId = '';
   String _deviceName = 'Android device';
   String _pcName = '';
+  String _quickAction = 'send_file';
   List<String> _baseUrls = const [];
   List<_PcRequestFile> _requestFiles = const [];
 
@@ -82,6 +83,8 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() =>
             _status = call.arguments?.toString() ?? 'Native action finished');
       }
+    } else if (call.method == 'deepLink') {
+      await _handleDeepLink(call.arguments?.toString());
     }
     return null;
   }
@@ -89,6 +92,19 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _bootstrap() async {
     await _loadConfig();
     _ensureDeviceId();
+    final link = await _prefs.invokeMethod<String>('consumeInitialDeepLink');
+    await _handleDeepLink(link);
+  }
+
+  Future<void> _handleDeepLink(String? link) async {
+    if (link == null || link.isEmpty) return;
+    final uri = Uri.tryParse(link);
+    if (uri?.scheme != 'smartmpc' || uri?.host != 'tap') return;
+
+    if (uri?.queryParameters['action'] == 'request_files') {
+      setState(() => _tabIndex = 1);
+      await _loadRequestFiles();
+    }
   }
 
   Future<void> _loadConfig() async {
@@ -103,6 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _deviceId = config['deviceId']?.toString() ?? '';
         _deviceToken = config['deviceToken']?.toString() ?? '';
         _pcId = config['pcId']?.toString() ?? '';
+        _quickAction = _validQuickAction(config['quickAction']?.toString());
         _deviceName = config['deviceName']?.toString() ?? 'Android device';
       });
     } catch (error) {
@@ -117,6 +134,7 @@ class _HomeScreenState extends State<HomeScreen> {
       'deviceId': _deviceId,
       'deviceToken': _deviceToken,
       'pcId': _pcId,
+      'quickAction': _quickAction,
     });
     if (showStatus && mounted) setState(() => _status = 'Config saved');
   }
@@ -225,6 +243,20 @@ class _HomeScreenState extends State<HomeScreen> {
       });
       return 'URL sent to PC';
     });
+  }
+
+  Future<void> _setQuickAction(String? value) async {
+    setState(() => _quickAction = _validQuickAction(value));
+    await _saveConfig(showStatus: true);
+  }
+
+  Future<void> _runTapAction() async {
+    if (!_isTrusted) {
+      setState(() => _status = 'Trust this phone first');
+      return;
+    }
+    await _prefs.invokeMethod('runTapAction');
+    setState(() => _status = 'Running tap action');
   }
 
   Future<void> _readPhoneClipboard() async {
@@ -386,6 +418,18 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() =>
         _deviceId = 'android-${DateTime.now().millisecondsSinceEpoch}-$suffix');
     _saveConfig();
+  }
+
+  String _validQuickAction(String? value) {
+    const ids = {
+      'send_file',
+      'pull_clipboard',
+      'request_files',
+      'open_chrome',
+      'lock_pc',
+      'sleep_pc',
+    };
+    return ids.contains(value) ? value! : 'send_file';
   }
 
   @override
@@ -560,6 +604,44 @@ class _HomeScreenState extends State<HomeScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        _SectionCard(
+          title: 'Tap Action',
+          child: Column(
+            children: [
+              DropdownButtonFormField<String>(
+                value: _quickAction,
+                decoration: const InputDecoration(
+                  labelText: 'Quick Action',
+                  prefixIcon: Icon(Icons.nfc_rounded),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                      value: 'send_file', child: Text('Send file')),
+                  DropdownMenuItem(
+                      value: 'pull_clipboard',
+                      child: Text('Pull PC clipboard')),
+                  DropdownMenuItem(
+                      value: 'request_files', child: Text('Request PC files')),
+                  DropdownMenuItem(
+                      value: 'open_chrome', child: Text('Open Chrome')),
+                  DropdownMenuItem(value: 'lock_pc', child: Text('Lock PC')),
+                  DropdownMenuItem(value: 'sleep_pc', child: Text('Sleep PC')),
+                ],
+                onChanged: _busy ? null : _setQuickAction,
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.icon(
+                  onPressed: _busy || !_isTrusted ? null : _runTapAction,
+                  icon: const Icon(Icons.touch_app_rounded),
+                  label: const Text('Run Tap Action'),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
         _SectionCard(
           title: 'Files',
           child: Column(

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.Bundle
 import android.provider.OpenableColumns
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.android.RenderMode
@@ -20,6 +21,12 @@ class MainActivity : FlutterActivity() {
     private val channelName = "smart_mpc/preferences"
     private var channel: MethodChannel? = null
     private var pendingUpload: UploadConfig? = null
+    private var latestDeepLink: String? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        latestDeepLink = deepLinkFrom(intent)
+        super.onCreate(savedInstanceState)
+    }
 
     override fun getRenderMode(): RenderMode {
         return RenderMode.texture
@@ -41,6 +48,7 @@ class MainActivity : FlutterActivity() {
                                 "deviceId" to prefs.getString("deviceId", ""),
                                 "deviceToken" to prefs.getString("deviceToken", ""),
                                 "pcId" to prefs.getString("pcId", ""),
+                                "quickAction" to prefs.getString("quickAction", "send_file"),
                                 "deviceName" to readableDeviceName()
                             )
                         )
@@ -53,6 +61,7 @@ class MainActivity : FlutterActivity() {
                             .putString("deviceId", args["deviceId"] as? String ?: "")
                             .putString("deviceToken", args["deviceToken"] as? String ?: "")
                             .putString("pcId", args["pcId"] as? String ?: "")
+                            .putString("quickAction", args["quickAction"] as? String ?: "send_file")
                             .apply()
                         result.success(true)
                     }
@@ -80,9 +89,34 @@ class MainActivity : FlutterActivity() {
                         )
                         result.success(downloadId)
                     }
+                    "consumeInitialDeepLink" -> {
+                        val link = latestDeepLink ?: prefs.getString(NfcLaunchActivity.PREF_PENDING_DEEP_LINK, null)
+                        latestDeepLink = null
+                        if (link != null) {
+                            prefs.edit().remove(NfcLaunchActivity.PREF_PENDING_DEEP_LINK).apply()
+                        }
+                        result.success(link)
+                    }
+                    "runTapAction" -> {
+                        startActivity(Intent(this, NfcLaunchActivity::class.java))
+                        result.success(true)
+                    }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+
+        val link = deepLinkFrom(intent) ?: return
+        latestDeepLink = link
+        channel?.invokeMethod("deepLink", link)
+    }
+
+    private fun deepLinkFrom(intent: Intent?): String? {
+        return intent?.getStringExtra(NfcLaunchActivity.EXTRA_DEEP_LINK) ?: intent?.dataString
     }
 
     private fun readableDeviceName(): String {

@@ -24,6 +24,22 @@ Fitur tambahan:
 - open URL on PC
 - PC command buttons
 
+## Fase 6: NFC Integration
+
+Fitur tambahan:
+
+- NFC permission dan NDEF intent filter.
+- Deep link `smartmpc://tap`.
+- Native tap action launcher.
+- Quick action selector.
+- Run Tap Action simulation.
+- NFC send file.
+- NFC pull PC clipboard.
+- NFC request PC files fallback ke app.
+- NFC open Chrome.
+- NFC lock PC.
+- NFC sleep PC.
+
 ## Jalankan
 
 ```powershell
