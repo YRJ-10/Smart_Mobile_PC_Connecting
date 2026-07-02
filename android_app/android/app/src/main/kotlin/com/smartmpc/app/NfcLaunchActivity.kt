@@ -107,7 +107,7 @@ class NfcLaunchActivity : Activity() {
 
             mainHandler.post {
                 updateStatus(result.title, result.message, false)
-                finishAfterDelay(1700)
+                finishAfterDelay(1800)
             }
         }.start()
     }
@@ -120,7 +120,7 @@ class NfcLaunchActivity : Activity() {
 
             mainHandler.post {
                 updateStatus(result.title, result.message, false)
-                finishAfterDelay(1300)
+                finishAfterDelay(1400)
             }
         }.start()
     }
@@ -138,28 +138,28 @@ class NfcLaunchActivity : Activity() {
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
         startActivity(intent)
-        finishAfterDelay(250)
+        finishAfterDelay(300)
     }
 
     private fun showLaunchScreen() {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.rgb(16, 20, 23))
+            setBackgroundColor(Color.rgb(13, 17, 23))
             setPadding(48, 48, 48, 48)
         }
 
         progressView = ProgressBar(this).apply { isIndeterminate = true }
         titleView = TextView(this).apply {
             text = "Smart MPC"
-            setTextColor(Color.rgb(232, 237, 240))
+            setTextColor(Color.rgb(230, 237, 243))
             textSize = 20f
             gravity = Gravity.CENTER
             setPadding(0, 28, 0, 0)
         }
         messageView = TextView(this).apply {
-            text = "Reading tap action..."
-            setTextColor(Color.rgb(154, 168, 175))
+            text = "Reading context..."
+            setTextColor(Color.rgb(139, 148, 158))
             textSize = 14f
             gravity = Gravity.CENTER
             setPadding(0, 10, 0, 0)
@@ -226,29 +226,36 @@ class NfcLaunchActivity : Activity() {
     }
 
     private fun uploadFiles(uris: List<Uri>): TapResult {
-        val config = connectionConfig()
+        val prefs = getSharedPreferences(PREF_NAME, MODE_PRIVATE)
+        val baseUrl = prefs.getString("baseUrl", "")?.trim().orEmpty().trimEnd('/')
+        val deviceId = prefs.getString("deviceId", "")?.trim().orEmpty()
+        val deviceToken = prefs.getString("deviceToken", "")?.trim().orEmpty()
+
+        if (baseUrl.isEmpty() || deviceId.isEmpty() || deviceToken.isEmpty()) {
+            return TapResult("Not connected", "Open the app and trust this phone first.")
+        }
 
         var uploaded = 0
         for (uri in uris) {
-            uploadFile(config, uri)
+            uploadFile(baseUrl, deviceId, deviceToken, uri)
             uploaded += 1
         }
 
         return TapResult("File sent", "$uploaded file(s) sent to PC.")
     }
 
-    private fun uploadFile(config: ConnectionConfig, uri: Uri) {
+    private fun uploadFile(baseUrl: String, deviceId: String, deviceToken: String, uri: Uri) {
         val filename = fileName(uri)
         val encodedName = URLEncoder.encode(filename, Charsets.UTF_8.name())
-        val connection = URL("${config.baseUrl}/api/files?filename=$encodedName").openConnection() as HttpURLConnection
+        val connection = URL("$baseUrl/api/files?filename=$encodedName").openConnection() as HttpURLConnection
         connection.requestMethod = "POST"
-        connection.connectTimeout = 5000
-        connection.readTimeout = 60000
+        connection.connectTimeout = 3000
+        connection.readTimeout = 30000
         connection.doOutput = true
         connection.setChunkedStreamingMode(0)
         connection.setRequestProperty("Content-Type", "application/octet-stream")
-        connection.setRequestProperty("X-Device-Id", config.deviceId)
-        connection.setRequestProperty("X-Device-Token", config.deviceToken)
+        connection.setRequestProperty("X-Device-Id", deviceId)
+        connection.setRequestProperty("X-Device-Token", deviceToken)
 
         contentResolver.openInputStream(uri)?.use { input ->
             connection.outputStream.use { output -> input.copyTo(output) }
@@ -260,8 +267,8 @@ class NfcLaunchActivity : Activity() {
     private fun getClipboardFromPc(baseUrl: String, deviceId: String, deviceToken: String): String {
         val connection = URL("$baseUrl/api/clipboard").openConnection() as HttpURLConnection
         connection.requestMethod = "GET"
-        connection.connectTimeout = 5000
-        connection.readTimeout = 8000
+        connection.connectTimeout = 3000
+        connection.readTimeout = 5000
         connection.setRequestProperty("X-Device-Id", deviceId)
         connection.setRequestProperty("X-Device-Token", deviceToken)
 
@@ -272,8 +279,8 @@ class NfcLaunchActivity : Activity() {
     private fun postIntent(baseUrl: String, deviceId: String, deviceToken: String, body: JSONObject) {
         val connection = URL("$baseUrl/api/intent").openConnection() as HttpURLConnection
         connection.requestMethod = "POST"
-        connection.connectTimeout = 5000
-        connection.readTimeout = 8000
+        connection.connectTimeout = 3000
+        connection.readTimeout = 5000
         connection.doOutput = true
         connection.setRequestProperty("Content-Type", "application/json")
         connection.setRequestProperty("X-Device-Id", deviceId)

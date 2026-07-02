@@ -120,7 +120,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _handleDeepLink(String? link) async {
     if (link == null || link.isEmpty) return;
     final uri = Uri.tryParse(link);
-    if (uri?.scheme != 'smartmpc' || uri?.host != 'tap') return;
+    final scheme = uri?.scheme;
+    if ((scheme != 'smartmpc' && scheme != 'nfcinstant') ||
+        uri?.host != 'tap') {
+      return;
+    }
 
     if (uri?.queryParameters['action'] == 'request_files') {
       setState(() => _tabIndex = 1);

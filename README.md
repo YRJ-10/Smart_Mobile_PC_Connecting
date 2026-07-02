@@ -35,6 +35,7 @@ Dokumen repair:
 - [Reference Implementation Index](docs/REFERENCE_IMPLEMENTATION_INDEX.md)
 - [Repair Phase 1 Reference Mapping](docs/REPAIR_PHASE_1_REFERENCE_MAPPING.md)
 - [Repair Phase 2 Connect Tab](docs/REPAIR_PHASE_2_CONNECT_TAB.md)
+- [Repair Phase 3 NFC Forensic Port](docs/REPAIR_PHASE_3_NFC_FORENSIC_PORT.md)
 
 Struktur modul:
 

@@ -31,6 +31,8 @@ Rencana ini menggantikan pendekatan integrasi awal. Tujuannya adalah mengembalik
 
 - Port manifest, activity, deep link, NDEF, lifecycle, pending action, fallback.
 - Gunakan implementasi lama sebagai blueprint.
+- Output: `docs/REPAIR_PHASE_3_NFC_FORENSIC_PORT.md`.
+- Status: complete.
 
 ## Phase 4 - NFC Action Parity
 
