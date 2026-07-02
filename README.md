@@ -45,6 +45,7 @@ Dokumen repair:
 - [Repair Phase 10 Audio Parity](docs/REPAIR_PHASE_10_AUDIO_PARITY.md)
 - [Repair Phase 11 Mirror Parity](docs/REPAIR_PHASE_11_MIRROR_PARITY.md)
 - [Repair Phase 12 Discovery Parity](docs/REPAIR_PHASE_12_DISCOVERY_PARITY.md)
+- [Repair Phase 13 PC Server Compatibility Bridge](docs/REPAIR_PHASE_13_PC_SERVER_COMPATIBILITY_BRIDGE.md)
 
 Struktur modul:
 

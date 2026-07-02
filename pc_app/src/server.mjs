@@ -16,6 +16,7 @@ import {
   DEFAULT_PORT,
   HEADER_DEVICE_ID,
   HEADER_DEVICE_TOKEN,
+  HEADER_SESSION_TOKEN,
   HEADER_PAIRING_TOKEN,
   MAX_BODY_BYTES
 } from "./constants.mjs";
@@ -164,6 +165,7 @@ export class SmartMpcServer {
   #controlServer;
   #discoveryServer;
   #screenServer;
+  #sessions = new Map();
   #server = null;
   #startedAt = null;
 
@@ -199,6 +201,7 @@ export class SmartMpcServer {
       inbox_dir: this.#config.inbox_dir,
       outbox_dir: this.#config.outbox_dir,
       outbox_files: listFiles(this.#config.outbox_dir),
+      active_sessions: this.#sessions.size,
       control: this.#controlServer.state(),
       discovery: this.#discoveryServer.state(),
       screen: this.#screenServer.state(),
@@ -271,6 +274,7 @@ export class SmartMpcServer {
         }
         this.#server = null;
         this.#startedAt = null;
+        this.#sessions.clear();
         this.#requestLog.add("server_stopped");
         resolve(this.state());
       });
@@ -327,17 +331,30 @@ export class SmartMpcServer {
       return;
     }
 
+    const sessionPost = req.method === "POST" && (route === "/api/session/start" || route === "/api/session/stop");
     const protectedGet =
       req.method === "GET" &&
       (route === "/api/clipboard" ||
         route === "/api/request-files" ||
         route === "/api/request-files/download" ||
         route === "/api/server/state");
-    const protectedPost = req.method === "POST" && (route === "/api/intent" || route === "/api/files");
+    const protectedPost = req.method === "POST" && (route === "/api/intent" || route === "/api/files" || sessionPost);
 
     if ((protectedGet || protectedPost) && !this.#isAuthorized(req)) {
       this.#requestLog.add("unauthorized", { route });
       sendJson(res, 401, { ok: false, error: "Unauthorized" });
+      return;
+    }
+
+    if (req.method === "POST" && route === "/api/session/start") {
+      const session = this.#startSession(req);
+      sendJson(res, 200, { ok: true, ...session });
+      return;
+    }
+
+    if (req.method === "POST" && route === "/api/session/stop") {
+      const stopped = this.#stopSession(req);
+      sendJson(res, 200, { ok: true, stopped });
       return;
     }
 
@@ -523,17 +540,19 @@ export class SmartMpcServer {
 
     if (id === "lock_pc") {
       await lockPc();
-      return { command_id: id };
+      return { command_id: id, result: "locked" };
     }
 
     if (id === "sleep_pc") {
-      sleepPc().catch((error) => this.#requestLog.add("command_error", { action: id, error: error.message }));
-      return { command_id: id };
+      setTimeout(() => {
+        sleepPc().catch((error) => this.#requestLog.add("command_error", { action: id, error: error.message }));
+      }, 600);
+      return { command_id: id, result: "sleep_requested" };
     }
 
     if (id === "open_chrome") {
       await openChrome();
-      return { command_id: id };
+      return { command_id: id, result: "opened" };
     }
 
     const command = this.#config.allowed_commands?.[id];
@@ -541,18 +560,30 @@ export class SmartMpcServer {
 
     if (command.type === "open_path" && command.target === "inbox") {
       await openTarget(this.#config.inbox_dir);
-      return { command_id: id, target: "inbox" };
+      return { command_id: id, target: "inbox", result: "opened" };
+    }
+
+    if (command.type === "open_path" && command.path) {
+      await openTarget(resolve(String(command.path)));
+      return { command_id: id, result: "opened" };
     }
 
     if (command.type === "open_known_folder" && command.target === "downloads") {
       await openTarget(join(homedir(), "Downloads"));
-      return { command_id: id, target: "downloads" };
+      return { command_id: id, target: "downloads", result: "opened" };
     }
 
     throw new Error(`Unsupported command: ${id}`);
   }
 
   #isAuthorized(req) {
+    const sessionToken = String(req.headers[HEADER_SESSION_TOKEN] ?? "").trim();
+    if (sessionToken && this.#sessions.has(sessionToken)) {
+      const session = this.#sessions.get(sessionToken);
+      session.last_seen_at = new Date().toISOString();
+      return true;
+    }
+
     const deviceId = String(req.headers[HEADER_DEVICE_ID] ?? "").trim();
     const deviceToken = String(req.headers[HEADER_DEVICE_TOKEN] ?? "").trim();
     const trustedDevice = this.#config.trusted_devices?.[deviceId];
@@ -561,6 +592,34 @@ export class SmartMpcServer {
     trustedDevice.last_seen_at = new Date().toISOString();
     saveConfig(this.#config);
     return true;
+  }
+
+  #startSession(req) {
+    const deviceId = String(req.headers[HEADER_DEVICE_ID] ?? "").trim();
+    const trustedDevice = this.#config.trusted_devices?.[deviceId];
+    const sessionToken = randomUUID().replaceAll("-", "");
+    const now = new Date().toISOString();
+    this.#sessions.set(sessionToken, {
+      device_id: deviceId,
+      device_name: trustedDevice?.name ?? deviceId,
+      started_at: now,
+      last_seen_at: now
+    });
+    this.#requestLog.add("session_started", { device: trustedDevice?.name ?? deviceId });
+    return {
+      session_token: sessionToken,
+      device_id: deviceId,
+      started_at: now
+    };
+  }
+
+  #stopSession(req) {
+    const sessionToken = String(req.headers[HEADER_SESSION_TOKEN] ?? "").trim();
+    if (sessionToken && this.#sessions.delete(sessionToken)) {
+      this.#requestLog.add("session_stopped");
+      return true;
+    }
+    return false;
   }
 }
 

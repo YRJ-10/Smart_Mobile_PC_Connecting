@@ -96,6 +96,8 @@ Rencana ini menggantikan pendekatan integrasi awal. Tujuannya adalah mengembalik
 
 - Sesuaikan PC server agar mendukung flow lama tanpa membuang trust/auth Smart MPC.
 - Fokus bridge, bukan rewrite worker yang sudah terbukti.
+- Output: `docs/REPAIR_PHASE_13_PC_SERVER_COMPATIBILITY_BRIDGE.md`.
+- Status: complete.
 
 ## Phase 14 - Holistic Test Prep
 

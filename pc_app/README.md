@@ -45,12 +45,21 @@ Endpoint awal:
 - `GET /health`
 - `GET /pair`
 - `POST /api/devices/register`
+- `POST /api/session/start`
+- `POST /api/session/stop`
 - `GET /api/server/state`
 - `POST /api/intent`
 - `POST /api/files`
 - `GET /api/clipboard`
 - `GET /api/request-files`
 - `GET /api/request-files/download`
+
+Compatibility bridge:
+
+- Protected HTTP routes accept trusted device headers.
+- Protected HTTP routes also accept `X-Session-Token` after `POST /api/session/start`.
+- Legacy NFC endpoints and response shapes remain supported.
+- Legacy `open_path` commands with a configured `path` remain supported.
 
 Remote control:
 

@@ -7,3 +7,4 @@ export const MAX_BODY_BYTES = 64 * 1024 * 1024;
 export const HEADER_PAIRING_TOKEN = "x-pairing-token";
 export const HEADER_DEVICE_ID = "x-device-id";
 export const HEADER_DEVICE_TOKEN = "x-device-token";
+export const HEADER_SESSION_TOKEN = "x-session-token";
