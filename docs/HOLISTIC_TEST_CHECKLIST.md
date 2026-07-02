@@ -40,8 +40,6 @@ Gunakan checklist ini untuk uji lengkap setelah semua fase repair selesai. Jalan
 - Send Clipboard mengirim teks Android ke clipboard PC.
 - Pull Clipboard mengambil clipboard PC ke Android.
 - Open URL membuka URL di PC.
-- Command Open Inbox bekerja.
-- Command Open Downloads bekerja.
 - Command Open Chrome bekerja.
 - Lock PC bekerja jika aman diuji.
 - Sleep PC hanya diuji jika memang aman.

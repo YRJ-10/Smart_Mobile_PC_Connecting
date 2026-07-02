@@ -42,6 +42,10 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   static const _prefs = MethodChannel('smart_mpc/preferences');
+  static const int _actionsTab = 0;
+  static const int _remoteTab = 1;
+  static const int _mirrorTab = 2;
+  static const int _connectTab = 3;
 
   final _baseUrlController =
       TextEditingController(text: 'http://192.168.1.10:8765');
@@ -170,7 +174,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     if (uri?.queryParameters['action'] == 'request_files') {
-      setState(() => _tabIndex = 1);
+      await _setTabIndex(_actionsTab);
       await _loadRequestFiles();
     }
   }
@@ -937,7 +941,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _setTabIndex(int index) async {
-    if (index == 3) {
+    if (index < _actionsTab || index > _connectTab) return;
+
+    if (index == _mirrorTab) {
       await SystemChrome.setPreferredOrientations([
         DeviceOrientation.landscapeRight,
         DeviceOrientation.landscapeLeft,
@@ -949,7 +955,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return;
     }
 
-    if (_tabIndex == 3) {
+    if (_tabIndex == _mirrorTab) {
       _mirrorActivePointers.clear();
       await SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
@@ -1050,15 +1056,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final pages = [
-      _buildConnectPage(),
       _buildActionsPage(),
       _buildRemotePage(),
       _buildMirrorPage(),
+      _buildConnectPage(),
     ];
+    final isMirrorTab = _tabIndex == _mirrorTab;
 
     return Scaffold(
-      backgroundColor: _tabIndex == 3 ? Colors.black : null,
-      appBar: _tabIndex == 3
+      backgroundColor: isMirrorTab ? Colors.black : null,
+      appBar: isMirrorTab
           ? null
           : AppBar(
               title: const Text('Smart MPC'),
@@ -1074,16 +1081,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ],
             ),
-      body:
-          _tabIndex == 3 ? pages[_tabIndex] : SafeArea(child: pages[_tabIndex]),
-      bottomNavigationBar: _tabIndex == 3
+      body: isMirrorTab ? pages[_tabIndex] : SafeArea(child: pages[_tabIndex]),
+      bottomNavigationBar: isMirrorTab
           ? null
           : NavigationBar(
               selectedIndex: _tabIndex,
               onDestinationSelected: (index) => unawaited(_setTabIndex(index)),
               destinations: const [
-                NavigationDestination(
-                    icon: Icon(Icons.lan_rounded), label: 'Connect'),
                 NavigationDestination(
                     icon: Icon(Icons.bolt_rounded), label: 'Actions'),
                 NavigationDestination(
@@ -1091,6 +1095,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 NavigationDestination(
                     icon: Icon(Icons.screenshot_monitor_rounded),
                     label: 'Mirror'),
+                NavigationDestination(
+                    icon: Icon(Icons.lan_rounded), label: 'Connect'),
               ],
             ),
     );
@@ -1099,7 +1105,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _exitMirrorPage() async {
     _mirrorActivePointers.clear();
     _disconnectMirror();
-    await _setTabIndex(2);
+    await _setTabIndex(_remoteTab);
   }
 
   Widget _buildConnectPage() {
@@ -1369,18 +1375,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             spacing: 10,
             runSpacing: 10,
             children: [
-              _CommandButton(
-                  label: 'Open Inbox',
-                  icon: Icons.inventory_2_rounded,
-                  onTap: () => _sendCommand('open_inbox'),
-                  busy: _busy,
-                  trusted: _isTrusted),
-              _CommandButton(
-                  label: 'Downloads',
-                  icon: Icons.folder_rounded,
-                  onTap: () => _sendCommand('open_downloads'),
-                  busy: _busy,
-                  trusted: _isTrusted),
               _CommandButton(
                   label: 'Chrome',
                   icon: Icons.language_rounded,
