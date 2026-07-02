@@ -38,6 +38,7 @@ Dokumen repair:
 - [Repair Phase 3 NFC Forensic Port](docs/REPAIR_PHASE_3_NFC_FORENSIC_PORT.md)
 - [Repair Phase 4 NFC Action Parity](docs/REPAIR_PHASE_4_NFC_ACTION_PARITY.md)
 - [Repair Phase 5 Request Files Parity](docs/REPAIR_PHASE_5_REQUEST_FILES_PARITY.md)
+- [Repair Phase 6 File Upload Download Parity](docs/REPAIR_PHASE_6_FILE_UPLOAD_DOWNLOAD_PARITY.md)
 
 Struktur modul:
 

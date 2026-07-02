@@ -28,8 +28,9 @@ import { RequestLog } from "./request-log.mjs";
 
 function safeFilename(name) {
   const cleaned = String(name ?? "")
-    .replace(/[\\/:*?"<>|]/g, "_")
-    .replace(/\s+/g, " ")
+    .split("")
+    .filter((ch) => /[a-zA-Z0-9 ._\-()[\]]/.test(ch))
+    .join("")
     .trim();
   return cleaned || `file-${Date.now()}`;
 }

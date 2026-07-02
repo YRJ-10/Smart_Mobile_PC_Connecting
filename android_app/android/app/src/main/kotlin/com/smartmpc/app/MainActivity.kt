@@ -224,8 +224,8 @@ class MainActivity : FlutterActivity() {
         val connection = URL("${config.baseUrl.trimEnd('/')}/api/files?filename=$encodedName")
             .openConnection() as HttpURLConnection
         connection.requestMethod = "POST"
-        connection.connectTimeout = 5000
-        connection.readTimeout = 60000
+        connection.connectTimeout = 3000
+        connection.readTimeout = 30000
         connection.doOutput = true
         connection.setChunkedStreamingMode(0)
         connection.setRequestProperty("Content-Type", "application/octet-stream")

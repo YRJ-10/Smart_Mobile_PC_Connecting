@@ -51,6 +51,8 @@ Rencana ini menggantikan pendekatan integrasi awal. Tujuannya adalah mengembalik
 ## Phase 6 - File Upload/Download Parity
 
 - Port file picker, multiple upload, DownloadManager, filename handling, headers, error handling.
+- Output: `docs/REPAIR_PHASE_6_FILE_UPLOAD_DOWNLOAD_PARITY.md`.
+- Status: complete.
 
 ## Phase 7 - Clipboard and Quick Actions Parity
 
