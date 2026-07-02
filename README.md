@@ -41,6 +41,7 @@ Dokumen repair:
 - [Repair Phase 6 File Upload Download Parity](docs/REPAIR_PHASE_6_FILE_UPLOAD_DOWNLOAD_PARITY.md)
 - [Repair Phase 7 Clipboard Quick Actions Parity](docs/REPAIR_PHASE_7_CLIPBOARD_QUICK_ACTIONS_PARITY.md)
 - [Repair Phase 8 Remote UI Parity](docs/REPAIR_PHASE_8_REMOTE_UI_PARITY.md)
+- [Repair Phase 9 Remote Logic Parity](docs/REPAIR_PHASE_9_REMOTE_LOGIC_PARITY.md)
 
 Struktur modul:
 

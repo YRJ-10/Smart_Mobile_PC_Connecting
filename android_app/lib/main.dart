@@ -5,6 +5,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 void main() {
   runApp(const SmartMpcApp());
@@ -38,7 +40,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   static const _prefs = MethodChannel('smart_mpc/preferences');
 
   final _baseUrlController =
@@ -65,13 +67,21 @@ class _HomeScreenState extends State<HomeScreen> {
   String _pcName = '';
   String _quickAction = 'send_file';
   String _lastLiveText = '';
+  String _lastRecognizedWords = '';
   Socket? _controlSocket;
   Socket? _screenSocket;
   Uint8List? _screenFrame;
   List<int> _screenBuffer = [];
   bool _screenHandshakeDone = false;
-  Offset? _lastPointerPosition;
-  DateTime _lastMoveAt = DateTime.fromMillisecondsSinceEpoch(0);
+  late final stt.SpeechToText _speech;
+  double _lastBottomInset = 0.0;
+  final Map<int, Offset> _pointerPositions = {};
+  final Map<int, Offset> _pointerStartPositions = {};
+  DateTime _pointerDownTime = DateTime.now();
+  int _peakPointerCount = 0;
+  double _accumulatedDx = 0;
+  double _accumulatedDy = 0;
+  DateTime _lastMoveTime = DateTime.now();
   static const int _audioPort = 8081;
   List<_DiscoveredPc> _discoveredPcs = const [];
   List<_PcRequestFile> _requestFiles = const [];
@@ -82,12 +92,17 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _speech = stt.SpeechToText();
     _prefs.setMethodCallHandler(_handleNativeCall);
+    unawaited(_requestMicrophonePermission());
     _bootstrap();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _speech.stop();
     _prefs.invokeMethod('stopAudioReceiver');
     _controlSocket?.destroy();
     _screenSocket?.destroy();
@@ -97,6 +112,27 @@ class _HomeScreenState extends State<HomeScreen> {
     _clipboardController.dispose();
     _liveTextController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    final bottomInset = WidgetsBinding
+        .instance.platformDispatcher.views.first.viewInsets.bottom;
+
+    if (_lastBottomInset > 0.0 && bottomInset == 0.0) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      _liveTextController.clear();
+      _lastLiveText = '';
+    }
+    _lastBottomInset = bottomInset;
+  }
+
+  Future<void> _requestMicrophonePermission() async {
+    final status = await Permission.microphone.status;
+    if (!status.isGranted) {
+      await Permission.microphone.request();
+    }
   }
 
   Future<dynamic> _handleNativeCall(MethodCall call) async {
@@ -467,66 +503,168 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onTrackpadPointerDown(PointerDownEvent event) {
-    _lastPointerPosition = event.localPosition;
+    _pointerPositions[event.pointer] = event.localPosition;
+    _pointerStartPositions[event.pointer] = event.localPosition;
+    if (_pointerPositions.length == 1) {
+      _pointerDownTime = DateTime.now();
+      _peakPointerCount = 1;
+    }
+    if (_pointerPositions.length > _peakPointerCount) {
+      _peakPointerCount = _pointerPositions.length;
+    }
   }
 
   void _onTrackpadPointerMove(PointerMoveEvent event) {
-    final previous = _lastPointerPosition;
-    _lastPointerPosition = event.localPosition;
-    if (previous == null) return;
+    _pointerPositions[event.pointer] = event.localPosition;
 
-    final now = DateTime.now();
-    if (now.difference(_lastMoveAt).inMilliseconds < 12) return;
-    _lastMoveAt = now;
-
-    final delta = event.localPosition - previous;
-    if (delta.distance < 0.4) return;
-    _sendRemoteCommand({
-      'type': 'MOUSE_MOVE',
-      'dx': delta.dx,
-      'dy': delta.dy,
-    });
+    if (_pointerPositions.length == 1) {
+      _accumulatedDx += event.delta.dx;
+      _accumulatedDy += event.delta.dy;
+      final now = DateTime.now();
+      if (now.difference(_lastMoveTime).inMilliseconds >= 16) {
+        const sensitivity = 4.0;
+        _sendRemoteCommand({
+          'type': 'MOUSE_MOVE',
+          'dx': _accumulatedDx * sensitivity,
+          'dy': _accumulatedDy * sensitivity,
+        });
+        _lastMoveTime = now;
+        _accumulatedDx = 0;
+        _accumulatedDy = 0;
+      }
+    } else if (_pointerPositions.length >= 2) {
+      final now = DateTime.now();
+      if (now.difference(_lastMoveTime).inMilliseconds >= 16) {
+        final dy = event.delta.dy;
+        if (dy.abs() > 0.3) {
+          _sendRemoteCommand({'type': 'SCROLL', 'dy': -dy * 0.5});
+        }
+        _lastMoveTime = now;
+      }
+    }
   }
 
   void _onTrackpadPointerUp(PointerUpEvent event) {
-    _lastPointerPosition = null;
+    final startPos = _pointerStartPositions[event.pointer];
+    final endPos = event.localPosition;
+    final duration = DateTime.now().difference(_pointerDownTime).inMilliseconds;
+
+    if (_peakPointerCount == 1 && startPos != null) {
+      final dx = endPos.dx - startPos.dx;
+      final dy = endPos.dy - startPos.dy;
+      final dist = dx * dx + dy * dy;
+      if (dist < 400 && duration < 350) {
+        _sendRemoteCommand({'type': 'MOUSE_CLICK', 'button': 'left'});
+      }
+    } else if (_peakPointerCount >= 2) {
+      var avgDx = 0.0;
+      var avgDy = 0.0;
+      var count = 0;
+      for (final id in _pointerStartPositions.keys) {
+        final start = _pointerStartPositions[id];
+        final current =
+            _pointerPositions[id] ?? (id == event.pointer ? endPos : null);
+        if (start != null && current != null) {
+          avgDx += current.dx - start.dx;
+          avgDy += current.dy - start.dy;
+          count += 1;
+        }
+      }
+      if (count > 0) {
+        avgDx /= count;
+        avgDy /= count;
+      }
+      final dist = avgDx * avgDx + avgDy * avgDy;
+
+      if (dist < 500 && duration < 400) {
+        _sendRemoteCommand({'type': 'MOUSE_CLICK', 'button': 'right'});
+      } else if (dist >= 500 && avgDx.abs() > avgDy.abs()) {
+        _sendRemoteCommand({
+          'type': 'SPECIAL_KEY',
+          'key': avgDx > 0 ? 'browserback' : 'browserforward',
+        });
+      }
+    }
+
+    _pointerPositions.remove(event.pointer);
+    _pointerStartPositions.remove(event.pointer);
+    if (_pointerPositions.isEmpty) {
+      _peakPointerCount = 0;
+    }
   }
 
   void _onLiveTextChanged(String value) {
-    if (!_remoteConnected) {
-      _lastLiveText = value;
-      return;
+    if (value == _lastLiveText) return;
+
+    var commonLen = 0;
+    final minLen = value.length < _lastLiveText.length
+        ? value.length
+        : _lastLiveText.length;
+    while (commonLen < minLen && value[commonLen] == _lastLiveText[commonLen]) {
+      commonLen += 1;
     }
 
-    if (value.length > _lastLiveText.length &&
-        value.startsWith(_lastLiveText)) {
+    final backspacesNeeded = _lastLiveText.length - commonLen;
+    for (var i = 0; i < backspacesNeeded; i += 1) {
+      _sendRemoteCommand({'type': 'SPECIAL_KEY', 'key': 'backspace'});
+    }
+
+    final added = value.substring(commonLen);
+    if (added.isNotEmpty) {
       _sendRemoteCommand({
         'type': 'TYPE_TEXT',
-        'text': value.substring(_lastLiveText.length),
+        'text': added,
       });
-    } else if (value.length < _lastLiveText.length &&
-        _lastLiveText.startsWith(value)) {
-      final count = _lastLiveText.length - value.length;
-      for (var i = 0; i < count; i += 1) {
-        _sendRemoteCommand({'type': 'SPECIAL_KEY', 'key': 'backspace'});
-      }
     }
+
     _lastLiveText = value;
   }
 
-  void _startVoiceUi() {
+  Future<void> _startVoiceUi() async {
     if (!_remoteConnected) {
       setState(() => _remoteStatus = 'Connect remote first');
       return;
     }
+    final available = await _speech.initialize(
+      onStatus: (status) {
+        if (status == 'done' || status == 'notListening') {
+          if (mounted) {
+            setState(() => _voiceListening = false);
+          }
+        }
+      },
+      onError: (error) => debugPrint('Speech error: $error'),
+    );
+
+    if (!available) {
+      setState(() => _remoteStatus = 'Voice unavailable');
+      return;
+    }
+
     setState(() {
       _voiceListening = true;
-      _remoteStatus = 'Voice command ready';
+      _lastRecognizedWords = '';
+      _remoteStatus = 'Voice dictation listening';
     });
+    await _speech.listen(
+      onResult: (result) {
+        final recognizedWords = result.recognizedWords;
+        if (recognizedWords.startsWith(_lastRecognizedWords)) {
+          final newWords =
+              recognizedWords.substring(_lastRecognizedWords.length);
+          if (newWords.isNotEmpty) {
+            _sendRemoteCommand({'type': 'TYPE_TEXT', 'text': newWords});
+          }
+        }
+        _lastRecognizedWords = recognizedWords;
+      },
+      listenOptions:
+          stt.SpeechListenOptions(listenMode: stt.ListenMode.dictation),
+    );
   }
 
   void _stopVoiceUi() {
-    if (!_voiceListening) return;
+    _speech.stop();
     setState(() {
       _voiceListening = false;
       _remoteStatus =

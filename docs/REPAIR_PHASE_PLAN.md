@@ -71,6 +71,8 @@ Rencana ini menggantikan pendekatan integrasi awal. Tujuannya adalah mengembalik
 ## Phase 9 - Remote Logic Parity
 
 - Port mouse move, click, scroll, sensitivity, throttle, browser gestures, zoom, media, special keys, live typing.
+- Output: `docs/REPAIR_PHASE_9_REMOTE_LOGIC_PARITY.md`.
+- Status: complete.
 
 ## Phase 10 - Audio Parity
 
