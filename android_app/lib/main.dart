@@ -282,10 +282,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _runTapAction() async {
-    if (!_isTrusted) {
-      setState(() => _status = 'Trust this phone first');
-      return;
-    }
     await _prefs.invokeMethod('runTapAction');
     setState(() => _status = 'Running tap action');
   }
@@ -973,7 +969,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: FilledButton.icon(
-                  onPressed: _busy || !_isTrusted ? null : _runTapAction,
+                  onPressed: _busy ? null : _runTapAction,
                   icon: const Icon(Icons.touch_app_rounded),
                   label: const Text('Run Tap Action'),
                 ),

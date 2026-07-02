@@ -47,10 +47,10 @@ class NfcLaunchActivity : Activity() {
         when (quickAction()) {
             QUICK_SEND_FILE -> openFilePicker()
             QUICK_PULL_CLIPBOARD -> processQuickAction("Pulling clipboard") { pullPcClipboard() }
-            QUICK_REQUEST_FILES -> openMainAppForAction("request_files")
             QUICK_OPEN_CHROME -> processQuickAction("Opening Chrome") { sendCommand("open_chrome") }
             QUICK_LOCK_PC -> processQuickAction("Locking PC") { sendCommand("lock_pc") }
             QUICK_SLEEP_PC -> processQuickAction("Sleeping PC") { sendCommand("sleep_pc") }
+            QUICK_REQUEST_FILES -> openMainAppForAction()
             else -> openFilePicker()
         }
     }
@@ -125,9 +125,9 @@ class NfcLaunchActivity : Activity() {
         }.start()
     }
 
-    private fun openMainAppForAction(action: String) {
+    private fun openMainAppForAction() {
         updateStatus("Opening app", "Loading selected action.", true)
-        val deepLink = "$DEFAULT_DEEP_LINK?action=$action"
+        val deepLink = "$DEFAULT_DEEP_LINK?action=request_files"
         getSharedPreferences(PREF_NAME, MODE_PRIVATE)
             .edit()
             .putString(PREF_PENDING_DEEP_LINK, deepLink)

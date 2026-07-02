@@ -38,6 +38,8 @@ Rencana ini menggantikan pendekatan integrasi awal. Tujuannya adalah mengembalik
 
 - Port aksi NFC satu per satu.
 - Send file, pull clipboard, request files, open Chrome, lock, sleep.
+- Output: `docs/REPAIR_PHASE_4_NFC_ACTION_PARITY.md`.
+- Status: complete.
 
 ## Phase 5 - Request Files Parity
 
