@@ -39,6 +39,7 @@ Dokumen repair:
 - [Repair Phase 4 NFC Action Parity](docs/REPAIR_PHASE_4_NFC_ACTION_PARITY.md)
 - [Repair Phase 5 Request Files Parity](docs/REPAIR_PHASE_5_REQUEST_FILES_PARITY.md)
 - [Repair Phase 6 File Upload Download Parity](docs/REPAIR_PHASE_6_FILE_UPLOAD_DOWNLOAD_PARITY.md)
+- [Repair Phase 7 Clipboard Quick Actions Parity](docs/REPAIR_PHASE_7_CLIPBOARD_QUICK_ACTIONS_PARITY.md)
 
 Struktur modul:
 

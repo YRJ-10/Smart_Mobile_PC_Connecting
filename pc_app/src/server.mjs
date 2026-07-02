@@ -142,13 +142,20 @@ async function sleepPc() {
 }
 
 async function openChrome() {
+  if (platform() !== "win32") throw new Error("Open Chrome is only implemented for Windows");
+
   const candidates = [
     process.env.PROGRAMFILES ? join(process.env.PROGRAMFILES, "Google", "Chrome", "Application", "chrome.exe") : "",
     process.env["PROGRAMFILES(X86)"] ? join(process.env["PROGRAMFILES(X86)"], "Google", "Chrome", "Application", "chrome.exe") : "",
     process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe") : ""
   ].filter(Boolean);
   const chromePath = candidates.find((candidate) => existsSync(candidate));
-  await openTarget(chromePath || "https://www.google.com");
+  if (chromePath) {
+    await run(chromePath, []);
+    return;
+  }
+
+  await run("cmd", ["/c", "start", "", "chrome"]);
 }
 
 export class SmartMpcServer {

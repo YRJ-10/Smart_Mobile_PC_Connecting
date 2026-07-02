@@ -57,6 +57,8 @@ Rencana ini menggantikan pendekatan integrasi awal. Tujuannya adalah mengembalik
 ## Phase 7 - Clipboard and Quick Actions Parity
 
 - Port send clipboard, pull clipboard, open URL, continue intent, command whitelist.
+- Output: `docs/REPAIR_PHASE_7_CLIPBOARD_QUICK_ACTIONS_PARITY.md`.
+- Status: complete.
 
 ## Phase 8 - Remote UI Parity
 

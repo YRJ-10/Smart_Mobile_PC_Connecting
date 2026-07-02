@@ -14,6 +14,16 @@ function token() {
   return randomUUID().replaceAll("-", "");
 }
 
+function defaultAllowedCommands() {
+  return {
+    open_inbox: { type: "open_path", target: "inbox" },
+    open_downloads: { type: "open_known_folder", target: "downloads" },
+    open_chrome: { type: "pc_action" },
+    lock_pc: { type: "pc_action" },
+    sleep_pc: { type: "pc_action" }
+  };
+}
+
 function defaultConfig() {
   return {
     schema_version: 1,
@@ -24,13 +34,7 @@ function defaultConfig() {
     trusted_devices: {},
     inbox_dir: DEFAULT_INBOX_DIR,
     outbox_dir: DEFAULT_OUTBOX_DIR,
-    allowed_commands: {
-      open_inbox: { type: "open_path", target: "inbox" },
-      open_downloads: { type: "open_known_folder", target: "downloads" },
-      open_chrome: { type: "pc_action" },
-      lock_pc: { type: "pc_action" },
-      sleep_pc: { type: "pc_action" }
-    }
+    allowed_commands: defaultAllowedCommands()
   };
 }
 
@@ -70,9 +74,17 @@ function normalizeConfig(config) {
     next.outbox_dir = DEFAULT_OUTBOX_DIR;
     changed = true;
   }
+  const defaults = defaultAllowedCommands();
   if (!next.allowed_commands) {
-    next.allowed_commands = defaultConfig().allowed_commands;
+    next.allowed_commands = defaults;
     changed = true;
+  } else {
+    for (const [id, command] of Object.entries(defaults)) {
+      if (!next.allowed_commands[id]) {
+        next.allowed_commands[id] = command;
+        changed = true;
+      }
+    }
   }
 
   return { config: next, changed };

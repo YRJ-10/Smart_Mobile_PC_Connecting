@@ -267,10 +267,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _sendUrl() async {
     await _run('Opening URL on PC', () async {
+      final url = _urlController.text.trim();
+      if (url.isEmpty) throw Exception('URL is empty');
       await _postJson('/api/intent', {
         'type': 'url',
         'source': 'android',
-        'payload': {'url': _urlController.text.trim()},
+        'payload': {'url': url},
       });
       return 'URL sent to PC';
     });
