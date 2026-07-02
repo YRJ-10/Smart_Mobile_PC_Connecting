@@ -27,6 +27,12 @@ Dokumen awal:
 - [Phase 10 Discovery and Prep](docs/PHASE_10_DISCOVERY_AND_PREP.md)
 - [Holistic Test Checklist](docs/HOLISTIC_TEST_CHECKLIST.md)
 
+Dokumen repair:
+
+- [Repair Phase 0 Freeze and Audit](docs/REPAIR_PHASE_0_FREEZE_AUDIT.md)
+- [Forensic Porting Rules](docs/FORENSIC_PORTING_RULES.md)
+- [Repair Phase Plan](docs/REPAIR_PHASE_PLAN.md)
+
 Struktur modul:
 
 - [android_app](android_app/README.md) - aplikasi Android Flutter, NFC entry, dan native audio receiver.
