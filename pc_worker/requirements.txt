@@ -1,5 +1,5 @@
 PyAutoGUI==0.9.54
 numpy==2.3.5
-sounddevice==0.5.3
+soundcard==0.4.5
 mss==10.1.0
 Pillow==12.1.0

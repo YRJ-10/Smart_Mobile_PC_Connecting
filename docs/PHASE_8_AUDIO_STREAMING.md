@@ -20,8 +20,8 @@ Format audio awal:
 
 Catatan implementasi:
 
-- Worker memakai `sounddevice` dan `numpy` untuk audio capture.
-- Di Windows, worker mencoba WASAPI loopback dari default output device.
+- Worker memakai `soundcard` dan `numpy` untuk audio capture.
+- Di Windows, worker memakai loopback microphone dari default speaker seperti implementasi referensi.
 - Jika loopback tidak tersedia di runtime, worker akan melaporkan error lewat activity log.
 - Audio tetap dikendalikan oleh trusted control channel; UDP hanya menerima stream setelah Android menyalakan receiver.
 

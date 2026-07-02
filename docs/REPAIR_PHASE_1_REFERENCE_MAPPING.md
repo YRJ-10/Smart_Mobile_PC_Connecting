@@ -235,11 +235,11 @@ Target behavior:
 - Server captures loopback audio and sends UDP packets to phone.
 - Toggle sends `AUDIO_TOGGLE` and starts/stops Android receiver accordingly.
 
-Smart MPC current:
+Smart MPC current after Repair Phase 10:
 
-- Uses a newer audio worker based on `sounddevice`.
-- This may stay only if it reproduces the same user-visible behavior and latency.
-- If audio fails, restore closer reference behavior or compatibility path.
+- Uses the reference-style audio worker based on `soundcard`.
+- Android native receiver uses low-latency `AudioTrack.Builder` behavior.
+- If audio fails in holistic testing, debug against the reference flow first.
 
 ## Mirror
 

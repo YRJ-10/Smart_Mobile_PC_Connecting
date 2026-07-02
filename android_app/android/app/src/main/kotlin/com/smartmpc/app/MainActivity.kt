@@ -1,8 +1,8 @@
 package com.smartmpc.app
 
 import android.app.DownloadManager
+import android.media.AudioAttributes
 import android.media.AudioFormat
-import android.media.AudioManager
 import android.media.AudioTrack
 import android.content.Context
 import android.content.Intent
@@ -21,7 +21,6 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.URL
 import java.net.URLEncoder
-import kotlin.math.max
 
 class MainActivity : FlutterActivity() {
     private val channelName = "smart_mpc/preferences"
@@ -289,29 +288,39 @@ class MainActivity : FlutterActivity() {
     private fun startAudioReceiver(port: Int) {
         stopAudioReceiver()
         audioRunning = true
+        val minBuffer = AudioTrack.getMinBufferSize(
+            AUDIO_SAMPLE_RATE,
+            AudioFormat.CHANNEL_OUT_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+        )
+        val track = AudioTrack.Builder()
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+            )
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(AUDIO_SAMPLE_RATE)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .build()
+            )
+            .setBufferSizeInBytes(minBuffer)
+            .setTransferMode(AudioTrack.MODE_STREAM)
+            .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+            .build()
+        audioTrack = track
+        track.play()
+
         audioThread = Thread {
             runCatching {
-                val minBuffer = AudioTrack.getMinBufferSize(
-                    AUDIO_SAMPLE_RATE,
-                    AudioFormat.CHANNEL_OUT_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                )
-                val track = AudioTrack(
-                    AudioManager.STREAM_MUSIC,
-                    AUDIO_SAMPLE_RATE,
-                    AudioFormat.CHANNEL_OUT_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                    max(minBuffer * 4, AUDIO_SAMPLE_RATE),
-                    AudioTrack.MODE_STREAM,
-                )
                 val socket = DatagramSocket(port)
-                audioTrack = track
                 audioSocket = socket
-                track.play()
-
-                val buffer = ByteArray(4096)
+                val buffer = ByteArray(minBuffer * 2)
+                val packet = DatagramPacket(buffer, buffer.size)
                 while (audioRunning) {
-                    val packet = DatagramPacket(buffer, buffer.size)
                     socket.receive(packet)
                     if (packet.length > 0) {
                         track.write(packet.data, 0, packet.length)

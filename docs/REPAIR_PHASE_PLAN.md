@@ -77,6 +77,8 @@ Rencana ini menggantikan pendekatan integrasi awal. Tujuannya adalah mengembalik
 ## Phase 10 - Audio Parity
 
 - Port audio toggle, UDP behavior, native AudioTrack receiver, buffer, sample rate, start/stop order.
+- Output: `docs/REPAIR_PHASE_10_AUDIO_PARITY.md`.
+- Status: complete.
 
 ## Phase 11 - Mirror Parity
 

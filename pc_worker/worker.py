@@ -16,17 +16,17 @@ else:
 
 try:
     import numpy as np
-    import sounddevice as sd
+    import soundcard as sc
 except Exception as exc:  # pragma: no cover - runtime environment dependent
     np = None
-    sd = None
+    sc = None
     AUDIO_IMPORT_ERROR = str(exc)
 else:
     AUDIO_IMPORT_ERROR = ""
 
 AUDIO_SAMPLE_RATE = 16000
 AUDIO_CHANNELS = 1
-AUDIO_BLOCKSIZE = 480
+AUDIO_NUMFRAMES = 256
 
 audio_thread = None
 audio_stop_event = threading.Event()
@@ -43,7 +43,7 @@ def require_pyautogui():
 
 
 def require_audio():
-    if sd is None or np is None:
+    if sc is None or np is None:
         raise RuntimeError(f"audio unavailable: {AUDIO_IMPORT_ERROR}")
 
 
@@ -127,52 +127,36 @@ def audio_loop(target_host, target_port):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     target = (target_host, target_port)
 
-    def callback(indata, frames, time_info, status):
-        if audio_stop_event.is_set():
-            raise sd.CallbackStop()
-        audio = indata
-        if audio.ndim > 1:
-            audio = audio.mean(axis=1)
-        pcm = np.clip(audio * 32767.0, -32768, 32767).astype(np.int16).tobytes()
-        if pcm:
-            sock.sendto(pcm, target)
-
     try:
-        with open_loopback_stream(callback):
+        default_speaker = sc.default_speaker()
+        microphones = sc.all_microphones(include_loopback=True)
+        loopback_mic = next(
+            (
+                mic
+                for mic in microphones
+                if mic.isloopback and mic.name == default_speaker.name
+            ),
+            microphones[0],
+        )
+
+        with loopback_mic.recorder(
+            samplerate=AUDIO_SAMPLE_RATE,
+            channels=AUDIO_CHANNELS,
+        ) as mic:
             while not audio_stop_event.is_set():
-                time.sleep(0.05)
+                audio = mic.record(numframes=AUDIO_NUMFRAMES)
+                pcm = (
+                    np.clip(audio * 32767.0, -32768, 32767)
+                    .astype(np.int16)
+                    .tobytes()
+                )
+                if pcm:
+                    sock.sendto(pcm, target)
     except Exception as exc:
         respond(False, event="audio_error", error=str(exc))
     finally:
         sock.close()
         respond(True, event="audio_stopped")
-
-
-def open_loopback_stream(callback):
-    extra_settings = None
-    device = None
-    if sys.platform.startswith("win") and hasattr(sd, "WasapiSettings"):
-        try:
-            wasapi_host_api = next(
-                index
-                for index, api in enumerate(sd.query_hostapis())
-                if "wasapi" in api.get("name", "").lower()
-            )
-            device = sd.query_hostapis(wasapi_host_api).get("default_output_device")
-            extra_settings = sd.WasapiSettings(loopback=True)
-        except Exception:
-            device = None
-            extra_settings = None
-
-    return sd.InputStream(
-        samplerate=AUDIO_SAMPLE_RATE,
-        blocksize=AUDIO_BLOCKSIZE,
-        channels=AUDIO_CHANNELS,
-        dtype="float32",
-        callback=callback,
-        device=device,
-        extra_settings=extra_settings,
-    )
 
 
 def execute_special_key(key):
