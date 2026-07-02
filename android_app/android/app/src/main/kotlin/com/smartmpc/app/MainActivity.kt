@@ -212,13 +212,15 @@ class MainActivity : FlutterActivity() {
             throw IllegalStateException("Missing trusted PC config")
         }
 
-        for (uri in uris) {
-            uploadFile(config, uri)
+        for ((index, uri) in uris.withIndex()) {
+            uploadFile(config, uri, index + 1, uris.size)
         }
     }
 
-    private fun uploadFile(config: UploadConfig, uri: Uri) {
+    private fun uploadFile(config: UploadConfig, uri: Uri, index: Int, totalFiles: Int) {
         val filename = fileName(uri)
+        val totalBytes = fileSize(uri)
+        notifyNativeStatus("Uploading $filename ($index/$totalFiles)")
         val encodedName = URLEncoder.encode(filename, Charsets.UTF_8.name())
         val connection = URL("${config.baseUrl.trimEnd('/')}/api/files?filename=$encodedName")
             .openConnection() as HttpURLConnection
@@ -233,7 +235,24 @@ class MainActivity : FlutterActivity() {
 
         contentResolver.openInputStream(uri)?.use { input ->
             connection.outputStream.use { output ->
-                input.copyTo(output)
+                val buffer = ByteArray(64 * 1024)
+                var uploaded = 0L
+                var lastPercent = -1
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    output.write(buffer, 0, read)
+                    uploaded += read
+                    if (totalBytes > 0) {
+                        val percent = ((uploaded * 100) / totalBytes).toInt()
+                        if (percent != lastPercent && (percent == 100 || percent - lastPercent >= 5)) {
+                            lastPercent = percent
+                            notifyNativeStatus("Uploading $filename $percent%")
+                        }
+                    } else if (uploaded % (8L * 1024L * 1024L) < read) {
+                        notifyNativeStatus("Uploading $filename ${uploaded / (1024L * 1024L)} MB")
+                    }
+                }
             }
         } ?: throw IllegalStateException("Cannot read selected file")
 
@@ -246,6 +265,7 @@ class MainActivity : FlutterActivity() {
         if (!response.optBoolean("ok", false)) {
             throw IllegalStateException(response.optString("error", "Upload failed"))
         }
+        notifyNativeStatus("Uploaded $filename")
     }
 
     private fun fileName(uri: Uri): String {
@@ -259,6 +279,22 @@ class MainActivity : FlutterActivity() {
             }
         }
         return "upload-${System.currentTimeMillis()}"
+    }
+
+    private fun fileSize(uri: Uri): Long {
+        contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val index = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (index >= 0) return cursor.getLong(index)
+            }
+        }
+        return -1L
+    }
+
+    private fun notifyNativeStatus(message: String) {
+        runOnUiThread {
+            channel?.invokeMethod("nativeStatus", message)
+        }
     }
 
     private fun downloadToDownloads(

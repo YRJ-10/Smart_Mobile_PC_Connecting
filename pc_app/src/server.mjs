@@ -99,7 +99,7 @@ async function openTarget(target) {
   if (!value) throw new Error("Missing target");
 
   if (platform() === "win32") {
-    await run("powershell.exe", ["-NoProfile", "-Command", "Start-Process $args[0]", value]);
+    await run("cmd", ["/c", "start", "", value]);
     return;
   }
 

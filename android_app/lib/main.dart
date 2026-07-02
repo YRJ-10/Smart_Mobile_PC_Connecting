@@ -413,12 +413,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() => _status = 'Trust this phone first');
       return;
     }
+    setState(() => _status = 'Choose file(s) to send');
     await _prefs.invokeMethod('pickAndUploadFiles', {
       'baseUrl': _normalizedBaseUrl(),
       'deviceId': _deviceId,
       'deviceToken': _deviceToken,
     });
-    setState(() => _status = 'Choose file(s) to send');
   }
 
   Future<void> _loadRequestFiles() async {
@@ -437,6 +437,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _downloadRequestFile(_PcRequestFile file) async {
     await _run('Requesting ${file.name}', () async {
+      setState(() => _status = 'Starting download: ${file.name}');
       final url =
           '${_normalizedBaseUrl()}/api/request-files/download?filename=${Uri.encodeQueryComponent(file.name)}';
       await _prefs.invokeMethod('downloadToDownloads', {
@@ -445,7 +446,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         'deviceId': _deviceId,
         'deviceToken': _deviceToken,
       });
-      return 'Download started: ${file.name}';
+      return 'Download queued: ${file.name}';
     });
   }
 
@@ -1411,48 +1412,42 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       behavior: HitTestBehavior.translucent,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Column(
+        child: ListView(
           children: [
-            Row(
-              children: [
-                Text(
-                  'MobilePC Control',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const Spacer(),
-                if (_remoteConnected) ...[
-                  _RemotePill(
-                    icon: Icons.monitor_rounded,
-                    label: 'Mirror',
-                    active: true,
-                    color: Colors.blueAccent,
-                    onTap: () => setState(() => _tabIndex = 3),
-                  ),
-                  const SizedBox(width: 8),
-                  _RemotePill(
-                    icon: _audioEnabled
-                        ? Icons.speaker_group_rounded
-                        : Icons.volume_off_rounded,
-                    label: _audioEnabled ? 'Audio ON' : 'Audio OFF',
-                    active: _audioEnabled,
-                    color: _audioEnabled
-                        ? const Color(0xFF64FFDA)
+            Align(
+              alignment: Alignment.centerRight,
+              child: Wrap(
+                spacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (_remoteConnected)
+                    Tooltip(
+                      message: _audioEnabled
+                          ? 'Turn PC audio off'
+                          : 'Turn PC audio on',
+                      child: IconButton.filledTonal(
+                        visualDensity: VisualDensity.compact,
+                        onPressed: _toggleAudio,
+                        icon: Icon(
+                          _audioEnabled
+                              ? Icons.speaker_group_rounded
+                              : Icons.volume_off_rounded,
+                          color: _audioEnabled
+                              ? const Color(0xFF64FFDA)
+                              : Colors.redAccent,
+                        ),
+                      ),
+                    ),
+                  Icon(
+                    _remoteConnected ? Icons.wifi : Icons.wifi_off,
+                    color: _remoteConnected
+                        ? Colors.greenAccent
                         : Colors.redAccent,
-                    onTap: _toggleAudio,
                   ),
-                  const SizedBox(width: 8),
                 ],
-                Icon(
-                  _remoteConnected ? Icons.wifi : Icons.wifi_off,
-                  color:
-                      _remoteConnected ? Colors.greenAccent : Colors.redAccent,
-                ),
-              ],
+              ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
@@ -1643,7 +1638,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             ),
             const SizedBox(height: 20),
-            Expanded(
+            SizedBox(
+              height: 320,
               child: Listener(
                 onPointerDown: _onTrackpadPointerDown,
                 onPointerMove: _onTrackpadPointerMove,
@@ -1875,52 +1871,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _RemotePill extends StatelessWidget {
-  const _RemotePill({
-    required this.label,
-    required this.icon,
-    required this.active,
-    required this.color,
-    required this.onTap,
-  });
-
-  final String label;
-  final IconData icon;
-  final bool active;
-  final Color color;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 34,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: active ? 0.2 : 0.12),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: color.withValues(alpha: 0.5)),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: color, size: 16),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
