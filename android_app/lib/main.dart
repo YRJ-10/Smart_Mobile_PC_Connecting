@@ -1062,10 +1062,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _buildConnectPage(),
     ];
     final isMirrorTab = _tabIndex == _mirrorTab;
+    final isRemoteTab = _tabIndex == _remoteTab;
+    final isImmersiveTab = isRemoteTab || isMirrorTab;
 
     return Scaffold(
+      resizeToAvoidBottomInset: !isImmersiveTab,
       backgroundColor: isMirrorTab ? Colors.black : null,
-      appBar: isMirrorTab
+      appBar: isImmersiveTab
           ? null
           : AppBar(
               title: const Text('Smart MPC'),
@@ -1082,7 +1085,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ],
             ),
       body: isMirrorTab ? pages[_tabIndex] : SafeArea(child: pages[_tabIndex]),
-      bottomNavigationBar: isMirrorTab
+      bottomNavigationBar: isImmersiveTab
           ? null
           : NavigationBar(
               selectedIndex: _tabIndex,
@@ -1406,40 +1409,50 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       behavior: HitTestBehavior.translucent,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: ListView(
+        child: Column(
           children: [
-            Align(
-              alignment: Alignment.centerRight,
-              child: Wrap(
-                spacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  if (_remoteConnected)
-                    Tooltip(
-                      message: _audioEnabled
-                          ? 'Turn PC audio off'
-                          : 'Turn PC audio on',
-                      child: IconButton.filledTonal(
-                        visualDensity: VisualDensity.compact,
-                        onPressed: _toggleAudio,
-                        icon: Icon(
-                          _audioEnabled
-                              ? Icons.speaker_group_rounded
-                              : Icons.volume_off_rounded,
-                          color: _audioEnabled
-                              ? const Color(0xFF64FFDA)
-                              : Colors.redAccent,
+            Row(
+              children: [
+                Tooltip(
+                  message: 'Back to Actions',
+                  child: IconButton.filledTonal(
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => unawaited(_setTabIndex(_actionsTab)),
+                    icon: const Icon(Icons.arrow_back_rounded),
+                  ),
+                ),
+                const Spacer(),
+                Wrap(
+                  spacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (_remoteConnected)
+                      Tooltip(
+                        message: _audioEnabled
+                            ? 'Turn PC audio off'
+                            : 'Turn PC audio on',
+                        child: IconButton.filledTonal(
+                          visualDensity: VisualDensity.compact,
+                          onPressed: _toggleAudio,
+                          icon: Icon(
+                            _audioEnabled
+                                ? Icons.speaker_group_rounded
+                                : Icons.volume_off_rounded,
+                            color: _audioEnabled
+                                ? const Color(0xFF64FFDA)
+                                : Colors.redAccent,
+                          ),
                         ),
                       ),
+                    Icon(
+                      _remoteConnected ? Icons.wifi : Icons.wifi_off,
+                      color: _remoteConnected
+                          ? Colors.greenAccent
+                          : Colors.redAccent,
                     ),
-                  Icon(
-                    _remoteConnected ? Icons.wifi : Icons.wifi_off,
-                    color: _remoteConnected
-                        ? Colors.greenAccent
-                        : Colors.redAccent,
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             Row(
@@ -1632,8 +1645,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             ),
             const SizedBox(height: 20),
-            SizedBox(
-              height: 320,
+            Expanded(
               child: Listener(
                 onPointerDown: _onTrackpadPointerDown,
                 onPointerMove: _onTrackpadPointerMove,
