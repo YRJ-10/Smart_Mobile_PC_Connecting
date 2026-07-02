@@ -32,6 +32,8 @@ Dokumen repair:
 - [Repair Phase 0 Freeze and Audit](docs/REPAIR_PHASE_0_FREEZE_AUDIT.md)
 - [Forensic Porting Rules](docs/FORENSIC_PORTING_RULES.md)
 - [Repair Phase Plan](docs/REPAIR_PHASE_PLAN.md)
+- [Reference Implementation Index](docs/REFERENCE_IMPLEMENTATION_INDEX.md)
+- [Repair Phase 1 Reference Mapping](docs/REPAIR_PHASE_1_REFERENCE_MAPPING.md)
 
 Struktur modul:
 

@@ -14,6 +14,8 @@ Rencana ini menggantikan pendekatan integrasi awal. Tujuannya adalah mengembalik
 - Baca dua project referensi.
 - Buat mapping fitur ke file/function/layout/sequence.
 - Tandai fitur yang boleh dipertahankan dari Smart MPC dan fitur yang harus di-port ulang.
+- Output: `docs/REFERENCE_IMPLEMENTATION_INDEX.md` dan `docs/REPAIR_PHASE_1_REFERENCE_MAPPING.md`.
+- Status: complete.
 
 ## Phase 2 - Android Connect Tab Cleanup
 
