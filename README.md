@@ -37,6 +37,7 @@ Dokumen repair:
 - [Repair Phase 2 Connect Tab](docs/REPAIR_PHASE_2_CONNECT_TAB.md)
 - [Repair Phase 3 NFC Forensic Port](docs/REPAIR_PHASE_3_NFC_FORENSIC_PORT.md)
 - [Repair Phase 4 NFC Action Parity](docs/REPAIR_PHASE_4_NFC_ACTION_PARITY.md)
+- [Repair Phase 5 Request Files Parity](docs/REPAIR_PHASE_5_REQUEST_FILES_PARITY.md)
 
 Struktur modul:
 

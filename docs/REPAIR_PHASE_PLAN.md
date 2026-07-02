@@ -45,6 +45,8 @@ Rencana ini menggantikan pendekatan integrasi awal. Tujuannya adalah mengembalik
 
 - Pertahankan metode lama: PC outbox, Add Files dari PC app, Android refresh/list/download icon.
 - Sesuaikan auth saja jika perlu.
+- Output: `docs/REPAIR_PHASE_5_REQUEST_FILES_PARITY.md`.
+- Status: complete.
 
 ## Phase 6 - File Upload/Download Parity
 

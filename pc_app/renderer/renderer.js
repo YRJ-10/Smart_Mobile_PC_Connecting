@@ -117,7 +117,7 @@ function renderOutbox(files) {
     return;
   }
 
-  for (const file of files.slice(0, 5)) {
+  for (const file of files) {
     const row = document.createElement("div");
     row.className = "mini-row";
     const name = document.createElement("span");

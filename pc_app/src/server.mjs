@@ -70,7 +70,7 @@ function listFiles(directory) {
         modified_at: stats.mtime.toISOString()
       };
     })
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => b.modified_at.localeCompare(a.modified_at));
 }
 
 function run(command, args, options = {}) {
