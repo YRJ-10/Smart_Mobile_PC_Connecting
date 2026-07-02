@@ -72,7 +72,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Offset? _lastPointerPosition;
   DateTime _lastMoveAt = DateTime.fromMillisecondsSinceEpoch(0);
   static const int _audioPort = 8081;
-  List<String> _baseUrls = const [];
   List<_DiscoveredPc> _discoveredPcs = const [];
   List<_PcRequestFile> _requestFiles = const [];
 
@@ -172,22 +171,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Future<void> _testHealth() async {
-    await _run('Checking server', () async {
-      final result = await _getJson('/health');
-      final app = result['app']?.toString() ?? 'PC server';
-      final pcName = result['pc_name']?.toString() ?? '';
-      setState(() {
-        _pcName = pcName;
-        _pcId = result['pc_id']?.toString() ?? _pcId;
-      });
-      await _saveConfig();
-      return pcName.isEmpty
-          ? '$app is reachable'
-          : '$app on $pcName is reachable';
-    });
-  }
-
   Future<void> _pairWithPc() async {
     await _run('Pairing phone', () async {
       _ensureDeviceId();
@@ -208,28 +191,6 @@ class _HomeScreenState extends State<HomeScreen> {
       });
       await _saveConfig();
       return _isTrusted ? 'Phone trusted' : 'Pairing response incomplete';
-    });
-  }
-
-  Future<void> _loadPairInfo() async {
-    await _run('Loading pair info', () async {
-      final result = await _getJson('/pair');
-      final urls = (result['base_urls'] as List<dynamic>? ?? [])
-          .map((value) => value.toString())
-          .where((value) => value.isNotEmpty)
-          .toList();
-      setState(() {
-        _pcName = result['pc_name']?.toString() ?? '';
-        _pcId = result['pc_id']?.toString() ?? _pcId;
-        _baseUrls = urls;
-      });
-      if (urls.isNotEmpty) {
-        _baseUrlController.text = urls.first;
-        await _saveConfig();
-      }
-      return urls.isEmpty
-          ? 'Pair info loaded'
-          : 'Found ${urls.length} PC address(es)';
     });
   }
 
@@ -260,22 +221,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final pcs = results.values.toList()
         ..sort((a, b) => a.name.compareTo(b.name));
-      final urls = pcs.map((pc) => pc.baseUrl).toList();
-
-      setState(() {
-        _discoveredPcs = pcs;
-        if (urls.isNotEmpty) _baseUrls = urls;
-      });
+      setState(() => _discoveredPcs = pcs);
 
       if (pcs.isNotEmpty) {
-        _baseUrlController.text = pcs.first.baseUrl;
-        _pcName = pcs.first.name;
-        _pcId = pcs.first.pcId.isEmpty ? _pcId : pcs.first.pcId;
+        _applyDiscoveredPc(pcs.first);
         await _saveConfig();
       }
 
       return pcs.isEmpty ? 'No PC found' : 'Found ${pcs.length} PC server(s)';
     });
+  }
+
+  void _applyDiscoveredPc(_DiscoveredPc pc) {
+    _baseUrlController.text = pc.baseUrl;
+    _pcName = pc.name;
+    if (pc.pcId.isNotEmpty) _pcId = pc.pcId;
   }
 
   Future<void> _run(String pending, Future<String> Function() task) async {
@@ -905,16 +865,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 runSpacing: 10,
                 children: [
                   FilledButton.icon(
-                    onPressed: _busy ? null : _testHealth,
-                    icon: const Icon(Icons.favorite_rounded),
-                    label: const Text('Health'),
-                  ),
-                  FilledButton.icon(
-                    onPressed: _busy ? null : _loadPairInfo,
-                    icon: const Icon(Icons.search_rounded),
-                    label: const Text('Pair Info'),
-                  ),
-                  FilledButton.icon(
                     onPressed: _busy ? null : _discoverPcs,
                     icon: const Icon(Icons.radar_rounded),
                     label: const Text('Find PC'),
@@ -959,27 +909,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
-        if (_baseUrls.isNotEmpty) ...[
-          const SizedBox(height: 14),
-          _SectionCard(
-            title: 'PC Addresses',
-            child: Column(
-              children: _baseUrls
-                  .map(
-                    (url) => ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.link_rounded),
-                      title: Text(url),
-                      onTap: () {
-                        setState(() => _baseUrlController.text = url);
-                        _saveConfig(showStatus: true);
-                      },
-                    ),
-                  )
-                  .toList(),
-            ),
-          ),
-        ],
         if (_discoveredPcs.isNotEmpty) ...[
           const SizedBox(height: 14),
           _SectionCard(
@@ -994,11 +923,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       subtitle: Text(pc.baseUrl),
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () {
-                        setState(() {
-                          _baseUrlController.text = pc.baseUrl;
-                          _pcName = pc.name;
-                          _pcId = pc.pcId.isEmpty ? _pcId : pc.pcId;
-                        });
+                        setState(() => _applyDiscoveredPc(pc));
                         _saveConfig(showStatus: true);
                       },
                     ),

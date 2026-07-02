@@ -24,6 +24,8 @@ Rencana ini menggantikan pendekatan integrasi awal. Tujuannya adalah mengembalik
 - Hapus PC Addresses.
 - Pertahankan Find PC, Trust Phone, Save, Device, Discovered PCs.
 - Find PC harus mengisi PC Address ketika berhasil.
+- Output: `docs/REPAIR_PHASE_2_CONNECT_TAB.md`.
+- Status: complete.
 
 ## Phase 3 - NFC Forensic Port
 
