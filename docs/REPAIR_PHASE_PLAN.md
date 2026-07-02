@@ -65,6 +65,8 @@ Rencana ini menggantikan pendekatan integrasi awal. Tujuannya adalah mengembalik
 - Remote tab mengikuti project referensi.
 - Layout trackpad, ukuran, posisi tombol, toggle, grouping, audio controls.
 - Mirror boleh tetap tab terpisah.
+- Output: `docs/REPAIR_PHASE_8_REMOTE_UI_PARITY.md`.
+- Status: complete.
 
 ## Phase 9 - Remote Logic Parity
 

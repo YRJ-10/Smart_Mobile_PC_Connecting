@@ -52,6 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _remoteConnected = false;
   bool _audioEnabled = false;
   bool _mirrorConnected = false;
+  bool _voiceListening = false;
   int _tabIndex = 0;
   String _status = 'Ready';
   String _remoteStatus = 'Remote disconnected';
@@ -511,6 +512,26 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
     _lastLiveText = value;
+  }
+
+  void _startVoiceUi() {
+    if (!_remoteConnected) {
+      setState(() => _remoteStatus = 'Connect remote first');
+      return;
+    }
+    setState(() {
+      _voiceListening = true;
+      _remoteStatus = 'Voice command ready';
+    });
+  }
+
+  void _stopVoiceUi() {
+    if (!_voiceListening) return;
+    setState(() {
+      _voiceListening = false;
+      _remoteStatus =
+          _remoteConnected ? 'Remote connected' : 'Remote disconnected';
+    });
   }
 
   Future<void> _toggleAudio() async {
@@ -1132,210 +1153,356 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildRemotePage() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _SectionCard(
-          title: 'Remote Session',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  _StateChip(
-                    label: _remoteConnected ? 'Connected' : 'Offline',
-                    active: _remoteConnected,
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      behavior: HitTestBehavior.translucent,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Text(
+                  'MobilePC Control',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const Spacer(),
+                if (_remoteConnected) ...[
+                  _RemotePill(
+                    icon: Icons.monitor_rounded,
+                    label: 'Mirror',
+                    active: true,
+                    color: Colors.blueAccent,
+                    onTap: () => setState(() => _tabIndex = 3),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(child: Text(_remoteStatus)),
+                  const SizedBox(width: 8),
+                  _RemotePill(
+                    icon: _audioEnabled
+                        ? Icons.speaker_group_rounded
+                        : Icons.volume_off_rounded,
+                    label: _audioEnabled ? 'Audio ON' : 'Audio OFF',
+                    active: _audioEnabled,
+                    color: _audioEnabled
+                        ? const Color(0xFF64FFDA)
+                        : Colors.redAccent,
+                    onTap: _toggleAudio,
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Icon(
+                  _remoteConnected ? Icons.wifi : Icons.wifi_off,
+                  color:
+                      _remoteConnected ? Colors.greenAccent : Colors.redAccent,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _baseUrlController,
+                    decoration: _remoteInputDecoration(
+                      'PC IP Address (Auto-Scan)',
+                    ),
+                    keyboardType: TextInputType.url,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F2F31),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: IconButton(
+                    tooltip: 'Auto-Discover PC',
+                    onPressed: _busy ? null : _discoverPcs,
+                    icon: _busy
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xFF64FFDA),
+                            ),
+                          )
+                        : const Icon(
+                            Icons.search_rounded,
+                            color: Color(0xFF64FFDA),
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed:
+                      _remoteConnected ? _disconnectRemote : _connectRemote,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _remoteConnected
+                        ? const Color(0xFF2A1515)
+                        : Colors.teal.shade700,
+                    foregroundColor:
+                        _remoteConnected ? Colors.redAccent : Colors.white,
+                    side: BorderSide(
+                      color: _remoteConnected
+                          ? Colors.redAccent
+                          : const Color(0xFF64FFDA),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 16,
+                      horizontal: 18,
+                    ),
+                    elevation: 0,
+                  ),
+                  child: Text(
+                    _remoteConnected ? 'Disconnect' : 'Connect',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _remoteStatus,
+                    style: TextStyle(
+                      color: _remoteConnected
+                          ? Colors.greenAccent
+                          : Colors.grey[500],
+                      fontSize: 12,
+                    ),
+                  ),
+                  if (_remoteConnected)
+                    Text(
+                      _audioStatus,
+                      style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 12,
+                      ),
+                    ),
                 ],
               ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
+            ),
+            const SizedBox(height: 20),
+            TextField(
+              controller: _liveTextController,
+              decoration: _remoteInputDecoration(
+                'Live Type to PC...',
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.clear, color: Colors.grey, size: 20),
+                  onPressed: () {
+                    _liveTextController.clear();
+                    _lastLiveText = '';
+                    FocusManager.instance.primaryFocus?.unfocus();
+                  },
+                ),
+              ),
+              style: const TextStyle(color: Colors.white),
+              onChanged: _onLiveTextChanged,
+            ),
+            const SizedBox(height: 12),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
                 children: [
-                  FilledButton.icon(
-                    onPressed: _remoteConnected ? null : _connectRemote,
-                    icon: const Icon(Icons.play_arrow_rounded),
-                    label: const Text('Connect'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _remoteConnected ? _disconnectRemote : null,
-                    icon: const Icon(Icons.stop_rounded),
-                    label: const Text('Disconnect'),
-                  ),
+                  _remoteSpecialKeyButton(
+                      'Alt+Tab', Icons.compare_arrows_rounded, 'alttab'),
+                  _remoteSpecialKeyButton(
+                      'Enter', Icons.keyboard_return_rounded, 'enter'),
+                  _remoteSpecialKeyButton(
+                      'Bksp', Icons.backspace_rounded, 'backspace'),
+                  _remoteSpecialKeyButton(
+                      'Refresh', Icons.refresh_rounded, 'f5'),
+                  _remoteSpecialKeyButton(
+                      'Copy', Icons.content_copy_rounded, 'copy'),
+                  _remoteSpecialKeyButton(
+                      'Paste', Icons.content_paste_rounded, 'paste'),
                 ],
               ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        _SectionCard(
-          title: 'Trackpad',
-          child: Column(
-            children: [
-              Listener(
+            ),
+            const SizedBox(height: 16),
+            GestureDetector(
+              onLongPressStart: (_) => _startVoiceUi(),
+              onLongPressEnd: (_) => _stopVoiceUi(),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                height: 120,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: _voiceListening
+                      ? Colors.redAccent.withValues(alpha: 0.9)
+                      : const Color(0xFF1A1D2D),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: _voiceListening
+                        ? Colors.redAccent
+                        : Colors.teal.withValues(alpha: 0.3),
+                    width: 1.5,
+                  ),
+                  boxShadow: _voiceListening
+                      ? [
+                          BoxShadow(
+                            color: Colors.redAccent.withValues(alpha: 0.4),
+                            blurRadius: 15,
+                          )
+                        ]
+                      : [],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.mic_rounded,
+                      size: 40,
+                      color: _voiceListening
+                          ? Colors.white
+                          : const Color(0xFF64FFDA),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      _voiceListening
+                          ? 'Listening... (Release to Stop)'
+                          : 'Hold for Voice Command',
+                      style: TextStyle(
+                        color: _voiceListening ? Colors.white : Colors.white70,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Expanded(
+              child: Listener(
                 onPointerDown: _onTrackpadPointerDown,
                 onPointerMove: _onTrackpadPointerMove,
                 onPointerUp: _onTrackpadPointerUp,
                 child: Container(
-                  height: 260,
                   width: double.infinity,
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    color: const Color(0xFF0C1012),
-                    border: Border.all(color: const Color(0xFF2D3B43)),
+                    color: const Color(0xFF131520),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Colors.teal.withValues(alpha: 0.15),
+                    ),
                   ),
-                  alignment: Alignment.center,
-                  child: const Icon(
-                    Icons.touch_app_rounded,
-                    size: 44,
-                    color: Color(0xFF65D6A6),
+                  child: const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.touch_app_rounded,
+                          color: Colors.white24,
+                          size: 48,
+                        ),
+                        SizedBox(height: 12),
+                        Text(
+                          'TOUCHPAD',
+                          style: TextStyle(
+                            color: Colors.white30,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 2,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Tap - 2-Finger Tap - 2-Finger Swipe',
+                          style: TextStyle(
+                            color: Colors.white24,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  _RemoteButton(
-                    label: 'Left',
-                    icon: Icons.ads_click_rounded,
-                    onTap: () => _sendRemoteCommand({
-                      'type': 'MOUSE_CLICK',
-                      'button': 'left',
-                    }),
-                  ),
-                  _RemoteButton(
-                    label: 'Right',
-                    icon: Icons.touch_app_rounded,
-                    onTap: () => _sendRemoteCommand({
-                      'type': 'MOUSE_CLICK',
-                      'button': 'right',
-                    }),
-                  ),
-                  _RemoteButton(
-                    label: 'Scroll Up',
-                    icon: Icons.keyboard_arrow_up_rounded,
-                    onTap: () => _sendRemoteCommand({
-                      'type': 'SCROLL',
-                      'dy': 1,
-                    }),
-                  ),
-                  _RemoteButton(
-                    label: 'Scroll Down',
-                    icon: Icons.keyboard_arrow_down_rounded,
-                    onTap: () => _sendRemoteCommand({
-                      'type': 'SCROLL',
-                      'dy': -1,
-                    }),
-                  ),
-                ],
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 10),
+          ],
         ),
-        const SizedBox(height: 14),
-        _SectionCard(
-          title: 'Keyboard',
+      ),
+    );
+  }
+
+  InputDecoration _remoteInputDecoration(String label, {Widget? suffixIcon}) {
+    return InputDecoration(
+      suffixIcon: suffixIcon,
+      labelText: label,
+      labelStyle: const TextStyle(color: Colors.grey),
+      filled: true,
+      fillColor: const Color(0xFF1A1D2D),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: Color(0xFF64FFDA), width: 1.5),
+      ),
+    );
+  }
+
+  Widget _remoteSpecialKeyButton(String label, IconData icon, String keyId) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 12),
+      child: SizedBox(
+        height: 65,
+        width: 100,
+        child: ElevatedButton(
+          onPressed: () => _sendRemoteCommand({
+            'type': 'SPECIAL_KEY',
+            'key': keyId,
+          }),
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.all(4),
+            backgroundColor: const Color(0xFF1A1D2D),
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            side: BorderSide(
+              color: Colors.teal.withValues(alpha: 0.3),
+            ),
+            elevation: 2,
+          ),
           child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              TextField(
-                controller: _liveTextController,
-                decoration: const InputDecoration(
-                  labelText: 'Live Typing',
-                  prefixIcon: Icon(Icons.keyboard_rounded),
+              Icon(icon, size: 22, color: const Color(0xFF64FFDA)),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 11,
                 ),
-                minLines: 1,
-                maxLines: 4,
-                onChanged: _onLiveTextChanged,
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  _SpecialKeyButton(
-                      label: 'Alt Tab',
-                      keyId: 'alttab',
-                      send: _sendRemoteCommand),
-                  _SpecialKeyButton(
-                      label: 'Enter', keyId: 'enter', send: _sendRemoteCommand),
-                  _SpecialKeyButton(
-                      label: 'Backspace',
-                      keyId: 'backspace',
-                      send: _sendRemoteCommand),
-                  _SpecialKeyButton(
-                      label: 'Refresh', keyId: 'f5', send: _sendRemoteCommand),
-                  _SpecialKeyButton(
-                      label: 'Copy', keyId: 'copy', send: _sendRemoteCommand),
-                  _SpecialKeyButton(
-                      label: 'Paste', keyId: 'paste', send: _sendRemoteCommand),
-                  _SpecialKeyButton(
-                      label: 'Back',
-                      keyId: 'browserback',
-                      send: _sendRemoteCommand),
-                  _SpecialKeyButton(
-                      label: 'Forward',
-                      keyId: 'browserforward',
-                      send: _sendRemoteCommand),
-                ],
               ),
             ],
           ),
         ),
-        const SizedBox(height: 14),
-        _SectionCard(
-          title: 'Media',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  FilledButton.icon(
-                    onPressed: _toggleAudio,
-                    icon: Icon(_audioEnabled
-                        ? Icons.volume_up_rounded
-                        : Icons.volume_off_rounded),
-                    label: Text(_audioEnabled ? 'Stop Audio' : 'PC Audio'),
-                  ),
-                  _RemoteButton(
-                    label: 'Play Pause',
-                    icon: Icons.play_circle_rounded,
-                    onTap: () => _sendRemoteCommand({
-                      'type': 'MEDIA',
-                      'action': 'playpause',
-                    }),
-                  ),
-                  _RemoteButton(
-                    label: 'Zoom In',
-                    icon: Icons.zoom_in_rounded,
-                    onTap: () => _sendRemoteCommand({
-                      'type': 'ZOOM',
-                      'delta': 1,
-                    }),
-                  ),
-                  _RemoteButton(
-                    label: 'Zoom Out',
-                    icon: Icons.zoom_out_rounded,
-                    onTap: () => _sendRemoteCommand({
-                      'type': 'ZOOM',
-                      'delta': -1,
-                    }),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Text(_audioStatus,
-                  style: const TextStyle(color: Color(0xFF9AA8AF))),
-            ],
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -1427,43 +1594,48 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class _RemoteButton extends StatelessWidget {
-  const _RemoteButton({
+class _RemotePill extends StatelessWidget {
+  const _RemotePill({
     required this.label,
     required this.icon,
+    required this.active,
+    required this.color,
     required this.onTap,
   });
 
   final String label;
   final IconData icon;
+  final bool active;
+  final Color color;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return OutlinedButton.icon(
-      onPressed: onTap,
-      icon: Icon(icon),
-      label: Text(label),
-    );
-  }
-}
-
-class _SpecialKeyButton extends StatelessWidget {
-  const _SpecialKeyButton({
-    required this.label,
-    required this.keyId,
-    required this.send,
-  });
-
-  final String label;
-  final String keyId;
-  final void Function(Map<String, Object?> command) send;
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton(
-      onPressed: () => send({'type': 'SPECIAL_KEY', 'key': keyId}),
-      child: Text(label),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: active ? 0.2 : 0.12),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: 0.5)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 16),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
