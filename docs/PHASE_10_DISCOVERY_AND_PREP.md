@@ -25,5 +25,6 @@ Catatan:
 
 - Discovery tidak mengganti manual address input; keduanya tetap tersedia.
 - Discovery tidak melakukan trust otomatis. Pairing token dan Trust Phone tetap wajib.
-- Response legacy disediakan supaya konsep discovery lama tetap terbawa.
+- Response legacy exact `MOBILEPC_SERVER` disediakan supaya discovery lama tetap terbawa.
+- Response JSON Smart MPC tetap dikirim agar Android baru bisa mengisi base URL dan metadata PC.
 - Full uji lintas device dilakukan setelah fase ini.

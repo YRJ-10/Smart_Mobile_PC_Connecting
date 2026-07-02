@@ -282,11 +282,13 @@ Target behavior:
 - It should fill PC Address automatically.
 - It should not require user to manually copy IP when discovery succeeds.
 
-Smart MPC current:
+Smart MPC current after Repair Phase 12:
 
-- Already broadcasts `DISCOVER_SMART_MPC` and `DISCOVER_MOBILEPC`.
-- Parser expects JSON but has partial fallback.
-- Needs verification and cleanup in the Connect tab phase.
+- Broadcasts both `DISCOVER_SMART_MPC` and `DISCOVER_MOBILEPC`.
+- Repeats broadcast during the scan window.
+- Supports global broadcast and per-interface `/24` broadcast.
+- Parser accepts exact legacy responses and JSON metadata responses.
+- PC server sends exact `MOBILEPC_SERVER` for legacy compatibility and JSON metadata for Smart MPC.
 
 ## PC Server
 

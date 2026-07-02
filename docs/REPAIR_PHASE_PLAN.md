@@ -89,6 +89,8 @@ Rencana ini menggantikan pendekatan integrasi awal. Tujuannya adalah mengembalik
 ## Phase 12 - Discovery Parity
 
 - Port discovery request/response, broadcast timing, parsing, UI behavior.
+- Output: `docs/REPAIR_PHASE_12_DISCOVERY_PARITY.md`.
+- Status: complete.
 
 ## Phase 13 - PC Server Compatibility Bridge
 

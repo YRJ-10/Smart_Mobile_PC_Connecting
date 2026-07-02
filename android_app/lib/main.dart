@@ -253,16 +253,32 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         Datagram? datagram;
         while ((datagram = socket.receive()) != null) {
           final discovered = _DiscoveredPc.tryParse(datagram!);
-          if (discovered != null) results[discovered.baseUrl] = discovered;
+          if (discovered != null) {
+            final previous = results[discovered.host];
+            if (previous == null ||
+                previous.pcId.isEmpty && discovered.pcId.isNotEmpty ||
+                previous.name == previous.host &&
+                    discovered.name != discovered.host) {
+              results[discovered.host] = discovered;
+            }
+          }
         }
       });
 
-      final target = InternetAddress('255.255.255.255');
-      for (final message in const ['DISCOVER_SMART_MPC', 'DISCOVER_MOBILEPC']) {
-        socket.send(utf8.encode(message), target, 8081);
+      final targets = await _discoveryTargets();
+      for (var round = 0; round < 4; round += 1) {
+        for (final target in targets) {
+          for (final message in const [
+            'DISCOVER_SMART_MPC',
+            'DISCOVER_MOBILEPC',
+          ]) {
+            socket.send(utf8.encode(message), target, 8081);
+          }
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 500));
       }
 
-      await Future<void>.delayed(const Duration(milliseconds: 2200));
+      await Future<void>.delayed(const Duration(seconds: 1));
       await subscription.cancel();
       socket.close();
 
@@ -283,6 +299,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _baseUrlController.text = pc.baseUrl;
     _pcName = pc.name;
     if (pc.pcId.isNotEmpty) _pcId = pc.pcId;
+  }
+
+  Future<List<InternetAddress>> _discoveryTargets() async {
+    final values = <String>{'255.255.255.255'};
+    final interfaces = await NetworkInterface.list(
+      includeLoopback: false,
+      type: InternetAddressType.IPv4,
+    );
+    for (final interface in interfaces) {
+      for (final address in interface.addresses) {
+        final parts = address.address.split('.');
+        if (parts.length == 4) {
+          values.add('${parts[0]}.${parts[1]}.${parts[2]}.255');
+        }
+      }
+    }
+    return values.map(InternetAddress.new).toList();
   }
 
   Future<void> _run(String pending, Future<String> Function() task) async {
@@ -1897,11 +1930,13 @@ class _DiscoveredPc {
     required this.name,
     required this.baseUrl,
     required this.pcId,
+    required this.host,
   });
 
   final String name;
   final String baseUrl;
   final String pcId;
+  final String host;
 
   static _DiscoveredPc? tryParse(Datagram datagram) {
     final text = utf8.decode(datagram.data, allowMalformed: true).trim();
@@ -1928,6 +1963,7 @@ class _DiscoveredPc {
       name: pcName.isEmpty ? datagram.address.address : pcName,
       baseUrl: baseUrl,
       pcId: payload['pc_id']?.toString() ?? '',
+      host: datagram.address.address,
     );
   }
 
@@ -1936,12 +1972,17 @@ class _DiscoveredPc {
       if (text.startsWith('{')) {
         return jsonDecode(text) as Map<String, dynamic>;
       }
-      if (text.startsWith('MOBILEPC_SERVER')) {
+      if (text.startsWith('MOBILEPC_SERVER') ||
+          text.startsWith('SMART_MPC_SERVER')) {
         final jsonStart = text.indexOf('{');
         if (jsonStart >= 0) {
           return jsonDecode(text.substring(jsonStart)) as Map<String, dynamic>;
         }
-        return {'type': 'MOBILEPC_SERVER'};
+        return {
+          'type': text.startsWith('SMART_MPC_SERVER')
+              ? 'SMART_MPC_SERVER'
+              : 'MOBILEPC_SERVER',
+        };
       }
     } catch (_) {
       return null;

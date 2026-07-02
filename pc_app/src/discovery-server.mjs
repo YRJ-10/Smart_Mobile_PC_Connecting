@@ -70,13 +70,17 @@ export class DiscoveryServer {
     const request = message.toString("utf8").trim();
     if (request !== REQUEST && request !== LEGACY_REQUEST) return;
 
-    const payload = this.#payload(request === LEGACY_REQUEST);
-    const response =
-      request === LEGACY_REQUEST
-        ? `MOBILEPC_SERVER ${JSON.stringify(payload)}`
-        : JSON.stringify(payload);
-    this.#socket?.send(Buffer.from(response, "utf8"), remote.port, remote.address);
+    if (request === LEGACY_REQUEST) {
+      this.#sendResponse("MOBILEPC_SERVER", remote);
+      this.#sendResponse(JSON.stringify(this.#payload(false)), remote);
+    } else {
+      this.#sendResponse(JSON.stringify(this.#payload(false)), remote);
+    }
     this.#requestLog.add("discovery_response", { target: remote.address });
+  }
+
+  #sendResponse(response, remote) {
+    this.#socket?.send(Buffer.from(response, "utf8"), remote.port, remote.address);
   }
 
   #payload(legacy) {
