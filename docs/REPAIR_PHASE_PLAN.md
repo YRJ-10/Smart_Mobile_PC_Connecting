@@ -104,3 +104,5 @@ Rencana ini menggantikan pendekatan integrasi awal. Tujuannya adalah mengembalik
 - Update checklist.
 - Jalankan sanity checks.
 - Siapkan uji holistik ulang.
+- Output: `docs/REPAIR_PHASE_14_HOLISTIC_TEST_PREP.md`.
+- Status: complete.

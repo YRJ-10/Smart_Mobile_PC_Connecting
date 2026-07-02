@@ -1,80 +1,108 @@
 # Holistic Test Checklist
 
-Gunakan checklist ini setelah semua fase integrasi selesai.
+Gunakan checklist ini untuk uji lengkap setelah semua fase repair selesai. Jalankan dengan sabar dari atas ke bawah agar jika ada kegagalan, titik gagalnya jelas.
 
-## Persiapan PC
+## Persiapan Runtime
 
-- Jalankan `scripts/prepare_runtime.cmd` sekali jika dependency belum siap.
-- Jalankan `scripts/start_pc_app.cmd`.
-- Pastikan HTTP, Remote, Discovery, dan Mirror status running di desktop shell.
-- Catat pairing token dari desktop shell.
+- Jalankan `scripts/prepare_runtime.cmd` jika dependency belum pernah disiapkan setelah perubahan terakhir.
+- Jalankan `scripts/start_pc_app.cmd` untuk membuka desktop shell PC.
+- Pastikan server HTTP, remote control, discovery, dan screen status berjalan di desktop shell.
 - Pastikan firewall mengizinkan jaringan lokal untuk port `8765`, `8080`, `8081`, dan `8082`.
+- Catat pairing token dari desktop shell.
 
 ## Persiapan Android
 
-- Jalankan Android app.
+- Jalankan Android app dari Android Studio.
+- Buka tab Connect.
 - Tekan Find PC.
-- Pilih PC yang ditemukan atau isi address manual.
-- Tekan Health.
+- Pastikan PC Address terisi otomatis jika PC ditemukan.
+- Jika Find PC gagal, isi PC Address manual.
 - Masukkan pairing token.
 - Tekan Trust Phone.
+- Tekan Save.
+- Tutup dan buka ulang app Android, lalu pastikan PC Address dan token masih tersimpan.
 
-## Test Connection dan Auth
+## Connect Tab
 
-- Health berhasil.
-- Pair Info berhasil.
-- Trusted indicator aktif.
-- Device muncul di desktop shell.
-- Revoke device memutus akses lama.
+- Device ID muncul.
+- Trusted indicator aktif setelah Trust Phone.
+- Clear Local Trust menghapus trust lokal.
+- Discovered PCs muncul setelah Find PC berhasil.
+- Mengetuk item Discovered PCs mengisi PC Address.
+- Tidak ada section Health, Pair Info, atau PC Addresses.
 
-## Test File dan Clipboard
+## Actions Tab
 
-- Send File dari Android ke PC inbox.
-- Add Files dari PC shell ke outbox.
-- Request Files dari Android.
-- Download file PC ke Android Downloads.
-- Send clipboard Android ke PC.
-- Pull clipboard PC ke Android.
+- Send File mengirim file Android ke inbox PC.
+- PC shell Add Files memasukkan file ke outbox.
+- Request Files menampilkan daftar outbox di Android.
+- Tombol download tiap file menyimpan file ke Downloads Android.
+- Send Clipboard mengirim teks Android ke clipboard PC.
+- Pull Clipboard mengambil clipboard PC ke Android.
+- Open URL membuka URL di PC.
+- Command Open Inbox bekerja.
+- Command Open Downloads bekerja.
+- Command Open Chrome bekerja.
+- Lock PC bekerja jika aman diuji.
+- Sleep PC hanya diuji jika memang aman.
 
-## Test Quick Actions dan NFC
+## NFC Quick Actions
 
-- Run Tap Action untuk setiap quick action.
-- NFC/deep link membuka action.
-- Open Chrome.
-- Lock PC.
-- Sleep PC jika aman untuk diuji.
+- Tap action `send_file` membuka picker lalu upload ke PC.
+- Tap action `pull_clipboard` mengambil clipboard PC.
+- Tap action `request_files` membuka app ke flow request files.
+- Tap action `open_chrome` menjalankan command PC.
+- Tap action `lock_pc` menjalankan lock jika aman.
+- Tap action `sleep_pc` hanya diuji jika aman.
+- Deep link `smartmpc://tap` masih diproses.
+- Legacy scheme `nfcinstant://tap` masih diproses.
 
-## Test Remote Control
+## Remote Tab
 
-- Connect Remote.
-- Trackpad menggerakkan mouse.
-- Left/right click.
-- Scroll.
-- Live typing.
-- Backspace handling.
-- Alt+Tab, Enter, Refresh, Copy, Paste.
-- Browser back/forward.
-- Zoom.
-- Media play/pause.
+- Connect Remote berhasil.
+- Trackpad satu jari menggerakkan mouse dengan sensitivitas yang terasa seperti project acuan.
+- Tap satu jari menjadi left click.
+- Tap dua jari menjadi right click.
+- Scroll dua jari berjalan.
+- Swipe horizontal dua jari menjadi browser back/forward.
+- Live typing mengirim teks.
+- Edit tengah teks mengirim backspace dan teks baru dengan benar.
+- Tombol Alt+Tab, Enter, Backspace, Refresh, Copy, dan Paste bekerja.
+- Voice dictation mengirim teks ke PC.
 
-## Test Audio
+## Audio
 
-- Tekan PC Audio.
+- Tekan Audio ON.
 - Audio PC terdengar di Android.
-- Stop Audio berhenti bersih.
-- Remote command tetap responsif saat audio aktif.
+- Remote control tetap responsif saat audio aktif.
+- Tekan Audio OFF.
+- Audio berhenti bersih.
+- Disconnect Remote mematikan audio receiver Android.
 
-## Test Mirror
+## Mirror
 
-- Connect Mirror.
+- Buka tab Mirror.
+- Android masuk landscape.
+- Mirror auto-connect.
 - Frame layar PC muncul.
-- Pinch/zoom viewer bekerja.
-- Touch down/move/up mempengaruhi PC.
-- Disconnect Mirror berhenti bersih.
+- Frame memenuhi area 16:9.
+- Pinch zoom viewer bekerja.
+- Satu jari pada mirror mengontrol pointer PC.
+- Dua jari melepas mouse dan tidak membuat drag tersangkut.
+- Tombol back overlay keluar dari mirror dan kembali portrait.
+- Disconnect mirror berhenti bersih.
+
+## Discovery
+
+- Find PC menemukan PC lewat UDP.
+- Legacy request `DISCOVER_MOBILEPC` tetap dijawab.
+- Smart request `DISCOVER_SMART_MPC` tetap dijawab.
+- Jika PC ditemukan lewat legacy response lebih dulu, metadata JSON tetap memperbarui hasil saat datang.
 
 ## Catatan Hasil
 
 - Catat fitur yang gagal.
-- Catat pesan error dari Android.
+- Catat langkah terakhir sebelum gagal.
+- Catat pesan status Android.
 - Catat activity log PC shell.
-- Catat apakah masalah terjadi di Wi-Fi, firewall, dependency worker, atau mapping input.
+- Catat apakah kegagalan terkait firewall, dependency worker, pairing/trust, atau input mapping.

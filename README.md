@@ -46,6 +46,7 @@ Dokumen repair:
 - [Repair Phase 11 Mirror Parity](docs/REPAIR_PHASE_11_MIRROR_PARITY.md)
 - [Repair Phase 12 Discovery Parity](docs/REPAIR_PHASE_12_DISCOVERY_PARITY.md)
 - [Repair Phase 13 PC Server Compatibility Bridge](docs/REPAIR_PHASE_13_PC_SERVER_COMPATIBILITY_BRIDGE.md)
+- [Repair Phase 14 Holistic Test Prep](docs/REPAIR_PHASE_14_HOLISTIC_TEST_PREP.md)
 
 Struktur modul:
 
