@@ -1,47 +1,43 @@
-import io
 import struct
 import sys
-import time
 
 try:
+    import cv2
     import mss
-    from PIL import Image
+    import numpy as np
 except Exception as exc:  # pragma: no cover - runtime environment dependent
     sys.stderr.write(f"screen dependencies unavailable: {exc}\n")
     sys.stderr.flush()
     raise
 
-FPS = 8
-JPEG_QUALITY = 55
-MAX_WIDTH = 1280
+JPEG_QUALITY = 50
+FRAME_SIZE = (1280, 720)
 
 
 def encode_frame(sct, monitor):
-    shot = sct.grab(monitor)
-    image = Image.frombytes("RGB", shot.size, shot.rgb)
-    if image.width > MAX_WIDTH:
-        height = int(image.height * (MAX_WIDTH / image.width))
-        image = image.resize((MAX_WIDTH, height), Image.Resampling.BILINEAR)
-
-    output = io.BytesIO()
-    image.save(output, format="JPEG", quality=JPEG_QUALITY, optimize=True)
-    return output.getvalue()
+    image = np.array(sct.grab(monitor))
+    frame = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
+    frame = cv2.resize(frame, FRAME_SIZE)
+    ok, jpeg = cv2.imencode(
+        ".jpg",
+        frame,
+        [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY],
+    )
+    if not ok:
+        return b""
+    return jpeg.tobytes()
 
 
 def main():
-    interval = 1.0 / FPS
     with mss.mss() as sct:
         monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
         while True:
-            started = time.monotonic()
             frame = encode_frame(sct, monitor)
+            if not frame:
+                continue
             sys.stdout.buffer.write(struct.pack(">I", len(frame)))
             sys.stdout.buffer.write(frame)
             sys.stdout.buffer.flush()
-
-            elapsed = time.monotonic() - started
-            if elapsed < interval:
-                time.sleep(interval - elapsed)
 
 
 if __name__ == "__main__":

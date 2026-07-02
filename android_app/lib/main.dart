@@ -75,6 +75,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _screenHandshakeDone = false;
   late final stt.SpeechToText _speech;
   double _lastBottomInset = 0.0;
+  DateTime _lastMirrorMoveTime = DateTime.now();
+  final Set<int> _mirrorActivePointers = {};
   final Map<int, Offset> _pointerPositions = {};
   final Map<int, Offset> _pointerStartPositions = {};
   DateTime _pointerDownTime = DateTime.now();
@@ -101,6 +103,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
     WidgetsBinding.instance.removeObserver(this);
     _speech.stop();
     _prefs.invokeMethod('stopAudioReceiver');
@@ -744,6 +750,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _screenSocket?.destroy();
       _screenSocket = socket;
       _screenBuffer = [];
+      _screenFrame = null;
       _screenHandshakeDone = false;
       socket.listen(
         _handleScreenData,
@@ -779,6 +786,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _screenSocket?.destroy();
     _screenSocket = null;
     _screenBuffer = [];
+    _screenFrame = null;
     _screenHandshakeDone = false;
     setState(() {
       _mirrorConnected = false;
@@ -854,6 +862,67 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       'rx': rx,
       'ry': ry,
     });
+  }
+
+  void _sendMirrorTouchUp() {
+    if (!_remoteConnected) {
+      setState(() => _mirrorStatus = 'Connect mirror control first');
+      return;
+    }
+    _sendRemoteCommand({'type': 'TOUCH_UP'});
+  }
+
+  void _handleMirrorPointerDown(
+    PointerDownEvent event,
+    BoxConstraints constraints,
+  ) {
+    _mirrorActivePointers.add(event.pointer);
+    if (_mirrorActivePointers.length == 1) {
+      _sendMirrorTouch('TOUCH_DOWN', event.localPosition, constraints);
+    } else if (_mirrorActivePointers.length == 2) {
+      _sendMirrorTouchUp();
+    }
+  }
+
+  void _handleMirrorPointerMove(
+    PointerMoveEvent event,
+    BoxConstraints constraints,
+  ) {
+    if (_mirrorActivePointers.length != 1) return;
+    final now = DateTime.now();
+    if (now.difference(_lastMirrorMoveTime).inMilliseconds < 16) return;
+    _sendMirrorTouch('TOUCH_MOVE', event.localPosition, constraints);
+    _lastMirrorMoveTime = now;
+  }
+
+  void _handleMirrorPointerUp(PointerEvent event) {
+    _mirrorActivePointers.remove(event.pointer);
+    if (_mirrorActivePointers.isEmpty) {
+      _sendMirrorTouchUp();
+    }
+  }
+
+  Future<void> _setTabIndex(int index) async {
+    if (index == 3) {
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeRight,
+        DeviceOrientation.landscapeLeft,
+      ]);
+      setState(() => _tabIndex = index);
+      if (!_mirrorConnected) {
+        unawaited(_connectMirror());
+      }
+      return;
+    }
+
+    if (_tabIndex == 3) {
+      _mirrorActivePointers.clear();
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+    }
+    setState(() => _tabIndex = index);
   }
 
   Future<Map<String, dynamic>> _getJson(String path,
@@ -954,36 +1023,49 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     ];
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Smart MPC'),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Center(
-              child: _StateChip(
-                label: _isTrusted ? 'Trusted' : 'Untrusted',
-                active: _isTrusted,
-              ),
+      backgroundColor: _tabIndex == 3 ? Colors.black : null,
+      appBar: _tabIndex == 3
+          ? null
+          : AppBar(
+              title: const Text('Smart MPC'),
+              actions: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Center(
+                    child: _StateChip(
+                      label: _isTrusted ? 'Trusted' : 'Untrusted',
+                      active: _isTrusted,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
-      body: SafeArea(child: pages[_tabIndex]),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tabIndex,
-        onDestinationSelected: (index) => setState(() => _tabIndex = index),
-        destinations: const [
-          NavigationDestination(
-              icon: Icon(Icons.lan_rounded), label: 'Connect'),
-          NavigationDestination(
-              icon: Icon(Icons.bolt_rounded), label: 'Actions'),
-          NavigationDestination(
-              icon: Icon(Icons.touch_app_rounded), label: 'Remote'),
-          NavigationDestination(
-              icon: Icon(Icons.screenshot_monitor_rounded), label: 'Mirror'),
-        ],
-      ),
+      body:
+          _tabIndex == 3 ? pages[_tabIndex] : SafeArea(child: pages[_tabIndex]),
+      bottomNavigationBar: _tabIndex == 3
+          ? null
+          : NavigationBar(
+              selectedIndex: _tabIndex,
+              onDestinationSelected: (index) => unawaited(_setTabIndex(index)),
+              destinations: const [
+                NavigationDestination(
+                    icon: Icon(Icons.lan_rounded), label: 'Connect'),
+                NavigationDestination(
+                    icon: Icon(Icons.bolt_rounded), label: 'Actions'),
+                NavigationDestination(
+                    icon: Icon(Icons.touch_app_rounded), label: 'Remote'),
+                NavigationDestination(
+                    icon: Icon(Icons.screenshot_monitor_rounded),
+                    label: 'Mirror'),
+              ],
+            ),
     );
+  }
+
+  Future<void> _exitMirrorPage() async {
+    _mirrorActivePointers.clear();
+    _disconnectMirror();
+    await _setTabIndex(2);
   }
 
   Widget _buildConnectPage() {
@@ -1645,84 +1727,116 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildMirrorPage() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
+    return Stack(
       children: [
-        _SectionCard(
-          title: 'Screen Mirror',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  _StateChip(
-                    label: _mirrorConnected ? 'Connected' : 'Offline',
-                    active: _mirrorConnected,
+        Center(
+          child: _screenFrame == null
+              ? Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const CircularProgressIndicator(color: Color(0xFFEF4444)),
+                    const SizedBox(height: 16),
+                    Text(
+                      _mirrorStatus,
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                  ],
+                )
+              : AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return InteractiveViewer(
+                        panEnabled: false,
+                        minScale: 1,
+                        maxScale: 5,
+                        child: Listener(
+                          onPointerDown: (event) =>
+                              _handleMirrorPointerDown(event, constraints),
+                          onPointerMove: (event) =>
+                              _handleMirrorPointerMove(event, constraints),
+                          onPointerUp: _handleMirrorPointerUp,
+                          onPointerCancel: _handleMirrorPointerUp,
+                          child: Container(
+                            width: double.infinity,
+                            height: double.infinity,
+                            color: Colors.black,
+                            child: Image.memory(
+                              _screenFrame!,
+                              gaplessPlayback: true,
+                              fit: BoxFit.fill,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(child: Text(_mirrorStatus)),
-                ],
+                ),
+        ),
+        Positioned(
+          top: 20,
+          left: 20,
+          child: SafeArea(
+            child: DecoratedBox(
+              decoration: const BoxDecoration(
+                color: Colors.black54,
+                shape: BoxShape.circle,
               ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  FilledButton.icon(
-                    onPressed: _mirrorConnected ? null : _connectMirror,
-                    icon: const Icon(Icons.screenshot_monitor_rounded),
-                    label: const Text('Connect'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _mirrorConnected ? _disconnectMirror : null,
-                    icon: const Icon(Icons.stop_rounded),
-                    label: const Text('Disconnect'),
-                  ),
-                ],
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                onPressed: () => unawaited(_exitMirrorPage()),
               ),
-            ],
+            ),
           ),
         ),
-        const SizedBox(height: 14),
-        _SectionCard(
-          title: 'Display',
-          child: AspectRatio(
-            aspectRatio: 16 / 9,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return Listener(
-                    onPointerDown: (event) => _sendMirrorTouch(
-                        'TOUCH_DOWN', event.localPosition, constraints),
-                    onPointerMove: (event) => _sendMirrorTouch(
-                        'TOUCH_MOVE', event.localPosition, constraints),
-                    onPointerUp: (event) => _sendMirrorTouch(
-                        'TOUCH_UP', event.localPosition, constraints),
-                    child: InteractiveViewer(
-                      minScale: 1,
-                      maxScale: 3,
-                      child: SizedBox.expand(
-                        child: ColoredBox(
-                          color: const Color(0xFF0C1012),
-                          child: _screenFrame == null
-                              ? const Center(
-                                  child: Icon(
-                                    Icons.desktop_windows_rounded,
-                                    size: 46,
-                                    color: Color(0xFF65D6A6),
-                                  ),
-                                )
-                              : Image.memory(
-                                  _screenFrame!,
-                                  gaplessPlayback: true,
-                                  fit: BoxFit.fill,
-                                ),
-                        ),
+        Positioned(
+          top: 20,
+          right: 20,
+          child: SafeArea(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.54),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _mirrorConnected
+                          ? Icons.screenshot_monitor_rounded
+                          : Icons.sync_problem_rounded,
+                      color: _mirrorConnected
+                          ? const Color(0xFF65D6A6)
+                          : const Color(0xFFFCA5A5),
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _mirrorConnected ? 'Mirror' : _mirrorStatus,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                  );
-                },
+                    const SizedBox(width: 4),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      onPressed:
+                          _mirrorConnected ? _disconnectMirror : _connectMirror,
+                      icon: Icon(
+                        _mirrorConnected
+                            ? Icons.stop_rounded
+                            : Icons.play_arrow_rounded,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

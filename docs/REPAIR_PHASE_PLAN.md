@@ -83,6 +83,8 @@ Rencana ini menggantikan pendekatan integrasi awal. Tujuannya adalah mengembalik
 ## Phase 11 - Mirror Parity
 
 - Port capture, JPEG compression, frame size, FPS, TCP framing, Android render, touch mapping, pinch behavior.
+- Output: `docs/REPAIR_PHASE_11_MIRROR_PARITY.md`.
+- Status: complete.
 
 ## Phase 12 - Discovery Parity
 

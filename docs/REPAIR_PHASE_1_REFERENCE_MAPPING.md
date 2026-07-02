@@ -259,12 +259,12 @@ Target behavior:
 - 2 pointers release touch using `TOUCH_UP`.
 - Server captures primary monitor, resizes to `1280x720`, JPEG quality `50`.
 
-Smart MPC current:
+Smart MPC current after Repair Phase 11:
 
 - Mirror is embedded in a tab and adds auth handshake before frames.
-- Worker uses FPS 8, JPEG quality 55, and dynamic height.
-- This differs from reference. If auth handshake is kept, Android parser and server framing must still preserve the reference frame stream after handshake.
-- Preferred fix: keep Mirror as separate tab entry, but the mirror view itself should be reference-like.
+- Mirror tab enters landscape, hides app chrome, and shows the reference-like full black mirror view.
+- Worker uses fixed `1280x720`, JPEG quality `50`, and OpenCV encoding like the reference.
+- Auth handshake is kept before the reference-compatible frame stream.
 
 ## Discovery
 

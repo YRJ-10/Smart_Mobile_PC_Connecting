@@ -43,6 +43,7 @@ Dokumen repair:
 - [Repair Phase 8 Remote UI Parity](docs/REPAIR_PHASE_8_REMOTE_UI_PARITY.md)
 - [Repair Phase 9 Remote Logic Parity](docs/REPAIR_PHASE_9_REMOTE_LOGIC_PARITY.md)
 - [Repair Phase 10 Audio Parity](docs/REPAIR_PHASE_10_AUDIO_PARITY.md)
+- [Repair Phase 11 Mirror Parity](docs/REPAIR_PHASE_11_MIRROR_PARITY.md)
 
 Struktur modul:
 

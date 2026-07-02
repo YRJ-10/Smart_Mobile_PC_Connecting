@@ -17,19 +17,19 @@ Format screen stream awal:
 - Pesan pertama dari Android: JSON auth line.
 - Respons awal dari PC: JSON status line.
 - Frame berikutnya: 4-byte big-endian length + JPEG bytes.
-- FPS awal: `8`.
-- Max width awal: `1280`.
+- Ukuran frame: `1280x720`.
+- JPEG quality: `50`.
 
 Catatan implementasi:
 
-- Worker memakai `mss` dan `Pillow`.
+- Worker memakai `mss`, `numpy`, dan `opencv-python`.
 - Screen stream tetap dilindungi trusted device auth.
 - Touch mapping awal memakai koordinat relatif `0.0..1.0`.
-- `InteractiveViewer` sudah tersedia untuk pinch/zoom di mirror view.
+- `InteractiveViewer` memakai `panEnabled: false`, `minScale: 1`, dan `maxScale: 5`.
+- Mirror view mengunci landscape saat masuk dan kembali portrait saat keluar.
 
 Belum dikerjakan di fase ini:
 
-- Landscape lock saat masuk mirror.
 - Multi-monitor picker.
 - Adaptive FPS/quality.
 - Input mapping yang mengoreksi letterbox/aspect ratio secara presisi.
