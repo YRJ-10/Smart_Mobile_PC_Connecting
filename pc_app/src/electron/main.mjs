@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SmartMpcServer } from "../server.mjs";
@@ -9,8 +9,10 @@ const rendererRoot = join(appRoot, "renderer");
 const server = new SmartMpcServer();
 
 let mainWindow = null;
+let tray = null;
+let isQuitting = false;
 
-function createWindow() {
+function createWindow({ showOnReady = false } = {}) {
   mainWindow = new BrowserWindow({
     width: 1120,
     height: 760,
@@ -28,16 +30,80 @@ function createWindow() {
 
   mainWindow.loadFile(join(rendererRoot, "index.html"));
   mainWindow.once("ready-to-show", () => {
-    mainWindow?.show();
+    if (showOnReady) showMainWindow();
+  });
+  mainWindow.on("close", (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    mainWindow?.hide();
   });
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
 }
 
+function showMainWindow() {
+  if (!mainWindow) {
+    createWindow({ showOnReady: true });
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function createTray() {
+  if (tray) return;
+  const icon = nativeImage.createFromPath(join(appRoot, "assets", "tray.svg"));
+  tray = new Tray(icon);
+  tray.setToolTip("Smart MPC");
+  tray.on("click", showMainWindow);
+  tray.on("double-click", showMainWindow);
+  updateTrayMenu();
+}
+
+function updateTrayMenu() {
+  if (!tray) return;
+  const running = server.running;
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: "Show Smart MPC", click: showMainWindow },
+    { type: "separator" },
+    {
+      label: running ? "Server running" : "Server stopped",
+      enabled: false
+    },
+    {
+      label: "Start Server",
+      enabled: !running,
+      click: async () => {
+        await startServerSafely();
+        updateTrayMenu();
+      }
+    },
+    {
+      label: "Stop Server",
+      enabled: running,
+      click: async () => {
+        await server.stop();
+        updateTrayMenu();
+      }
+    },
+    { type: "separator" },
+    {
+      label: "Quit",
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      }
+    }
+  ]));
+}
+
 async function startServerSafely() {
   try {
-    return await server.start();
+    const state = await server.start();
+    updateTrayMenu();
+    return state;
   } catch (error) {
     return {
       ...server.state(),
@@ -48,10 +114,11 @@ async function startServerSafely() {
 
 app.whenReady().then(async () => {
   await startServerSafely();
-  createWindow();
+  createTray();
+  createWindow({ showOnReady: false });
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    showMainWindow();
   });
 });
 
@@ -63,8 +130,16 @@ app.on("before-quit", async (event) => {
 });
 
 ipcMain.handle("server:getState", () => server.state());
-ipcMain.handle("server:start", () => server.start());
-ipcMain.handle("server:stop", () => server.stop());
+ipcMain.handle("server:start", async () => {
+  const state = await server.start();
+  updateTrayMenu();
+  return state;
+});
+ipcMain.handle("server:stop", async () => {
+  const state = await server.stop();
+  updateTrayMenu();
+  return state;
+});
 ipcMain.handle("server:revokeDevice", (_event, deviceId) => server.revokeDevice(deviceId));
 
 ipcMain.handle("ui:copy", (_event, text) => {

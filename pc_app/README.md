@@ -79,6 +79,17 @@ Runtime files yang dibuat saat server dijalankan:
 
 File runtime tersebut tidak masuk git.
 
+Chrome profile optional dapat diatur di `config.json` lokal:
+
+```json
+{
+  "chrome_profile": "Profile 1",
+  "chrome_user_data_dir": ""
+}
+```
+
+Kosongkan nilainya untuk memakai behavior default Chrome.
+
 ## Fase 3: Desktop Shell
 
 Electron shell awal tersedia.

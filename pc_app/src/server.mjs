@@ -142,7 +142,7 @@ async function sleepPc() {
   ]);
 }
 
-async function openChrome() {
+async function openChrome(config = {}) {
   if (platform() !== "win32") throw new Error("Open Chrome is only implemented for Windows");
 
   const candidates = [
@@ -151,12 +151,22 @@ async function openChrome() {
     process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe") : ""
   ].filter(Boolean);
   const chromePath = candidates.find((candidate) => existsSync(candidate));
+  const args = chromeArgs(config);
   if (chromePath) {
-    await run(chromePath, []);
+    await run(chromePath, args);
     return;
   }
 
-  await run("cmd", ["/c", "start", "", "chrome"]);
+  await run("cmd", ["/c", "start", "", "chrome", ...args]);
+}
+
+function chromeArgs(config = {}) {
+  const args = [];
+  const userDataDir = String(config.chrome_user_data_dir ?? "").trim();
+  const profile = String(config.chrome_profile ?? "").trim();
+  if (userDataDir) args.push(`--user-data-dir=${userDataDir}`);
+  if (profile) args.push(`--profile-directory=${profile}`);
+  return args;
 }
 
 export class SmartMpcServer {
@@ -551,7 +561,7 @@ export class SmartMpcServer {
     }
 
     if (id === "open_chrome") {
-      await openChrome();
+      await openChrome(this.#config);
       return { command_id: id, result: "opened" };
     }
 
@@ -561,6 +571,11 @@ export class SmartMpcServer {
     if (command.type === "open_path" && command.target === "inbox") {
       await openTarget(this.#config.inbox_dir);
       return { command_id: id, target: "inbox", result: "opened" };
+    }
+
+    if (command.type === "open_path" && command.target === "outbox") {
+      await openTarget(this.#config.outbox_dir);
+      return { command_id: id, target: "outbox", result: "opened" };
     }
 
     if (command.type === "open_path" && command.path) {

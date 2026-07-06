@@ -17,6 +17,7 @@ function token() {
 function defaultAllowedCommands() {
   return {
     open_inbox: { type: "open_path", target: "inbox" },
+    open_outbox: { type: "open_path", target: "outbox" },
     open_downloads: { type: "open_known_folder", target: "downloads" },
     open_chrome: { type: "pc_action" },
     lock_pc: { type: "pc_action" },
@@ -34,6 +35,8 @@ function defaultConfig() {
     trusted_devices: {},
     inbox_dir: DEFAULT_INBOX_DIR,
     outbox_dir: DEFAULT_OUTBOX_DIR,
+    chrome_profile: "",
+    chrome_user_data_dir: "",
     allowed_commands: defaultAllowedCommands()
   };
 }
@@ -72,6 +75,14 @@ function normalizeConfig(config) {
   }
   if (!next.outbox_dir) {
     next.outbox_dir = DEFAULT_OUTBOX_DIR;
+    changed = true;
+  }
+  if (next.chrome_profile == null) {
+    next.chrome_profile = "";
+    changed = true;
+  }
+  if (next.chrome_user_data_dir == null) {
+    next.chrome_user_data_dir = "";
     changed = true;
   }
   const defaults = defaultAllowedCommands();

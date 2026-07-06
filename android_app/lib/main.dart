@@ -1603,6 +1603,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             runSpacing: 10,
             children: [
               _CommandButton(
+                  label: 'Inbox',
+                  icon: Icons.inventory_2_rounded,
+                  onTap: () => _sendCommand('open_inbox'),
+                  busy: _busy,
+                  trusted: _isTrusted),
+              _CommandButton(
+                  label: 'Outbox',
+                  icon: Icons.folder_copy_rounded,
+                  onTap: () => _sendCommand('open_outbox'),
+                  busy: _busy,
+                  trusted: _isTrusted),
+              _CommandButton(
                   label: 'Chrome',
                   icon: Icons.language_rounded,
                   onTap: () => _sendCommand('open_chrome'),
