@@ -130,7 +130,11 @@ export class ScreenServer {
 
     this.#streams.set(socket, stream);
     stream.stdout.on("data", (chunk) => {
-      if (!socket.destroyed) socket.write(chunk);
+      if (socket.destroyed) return;
+      if (!socket.write(chunk)) {
+        stream.stdout.pause();
+        socket.once("drain", () => stream.stdout.resume());
+      }
     });
     stream.stderr.on("data", (chunk) => {
       this.#requestLog.add("screen_worker_error", { error: chunk.toString("utf8").trim().slice(0, 160) });

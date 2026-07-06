@@ -156,8 +156,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   double? _fileTransferProgress;
   late final stt.SpeechToText _speech;
   double _lastBottomInset = 0.0;
-  DateTime _lastMirrorMoveTime = DateTime.now();
-  final Set<int> _mirrorActivePointers = {};
   final Map<int, Offset> _pointerPositions = {};
   final Map<int, Offset> _pointerStartPositions = {};
   DateTime _pointerDownTime = DateTime.now();
@@ -167,7 +165,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   DateTime _lastMoveTime = DateTime.now();
   DateTime _lastTwoFingerNavTime = DateTime.fromMillisecondsSinceEpoch(0);
   bool _trackpadDragging = false;
-  int? _mirrorPrimaryPointer;
   static const int _audioPort = 8081;
   bool _autoConnectInFlight = false;
   DateTime? _lastAutoConnectAt;
@@ -1155,6 +1152,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _handleScreenData(Uint8List chunk) {
     _screenBuffer.addAll(chunk);
+    Uint8List? latestFrame;
 
     if (!_screenHandshakeDone) {
       final newline = _screenBuffer.indexOf(10);
@@ -1184,82 +1182,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
       if (_screenBuffer.length < length + 4) return;
 
-      final frame = Uint8List.fromList(_screenBuffer.sublist(4, length + 4));
+      latestFrame = Uint8List.fromList(_screenBuffer.sublist(4, length + 4));
       _screenBuffer = _screenBuffer.sublist(length + 4);
-      if (mounted) {
-        setState(() {
-          _screenFrame = frame;
-          _mirrorStatus = 'Mirror receiving';
-        });
-      }
     }
-  }
 
-  void _sendMirrorTouch(
-    String type,
-    Offset position,
-    BoxConstraints constraints,
-  ) {
-    if (!_remoteConnected) {
-      setState(() => _mirrorStatus = 'Connect mirror control first');
-      return;
-    }
-    final width = constraints.maxWidth <= 0 ? 1.0 : constraints.maxWidth;
-    final height = constraints.maxHeight <= 0 ? 1.0 : constraints.maxHeight;
-    final rx = (position.dx / width).clamp(0.0, 1.0);
-    final ry = (position.dy / height).clamp(0.0, 1.0);
-    _sendRemoteCommand({
-      'type': type,
-      'rx': rx,
-      'ry': ry,
-    });
-  }
-
-  void _sendMirrorTouchUp() {
-    if (!_remoteConnected) {
-      setState(() => _mirrorStatus = 'Connect mirror control first');
-      return;
-    }
-    _sendRemoteCommand({'type': 'TOUCH_UP'});
-  }
-
-  void _handleMirrorPointerDown(
-    PointerDownEvent event,
-    BoxConstraints constraints,
-  ) {
-    _mirrorActivePointers.add(event.pointer);
-    if (_mirrorPrimaryPointer == null) {
-      _mirrorPrimaryPointer = event.pointer;
-      _sendMirrorTouch('TOUCH_DOWN', event.localPosition, constraints);
-    } else if (_mirrorActivePointers.length == 2) {
-      _sendMirrorTouchUp();
-      _mirrorPrimaryPointer = null;
-    }
-  }
-
-  void _handleMirrorPointerMove(
-    PointerMoveEvent event,
-    BoxConstraints constraints,
-  ) {
-    if (_mirrorPrimaryPointer != event.pointer ||
-        _mirrorActivePointers.length != 1) {
-      return;
-    }
-    final now = DateTime.now();
-    if (now.difference(_lastMirrorMoveTime).inMilliseconds < 16) return;
-    _sendMirrorTouch('TOUCH_MOVE', event.localPosition, constraints);
-    _lastMirrorMoveTime = now;
-  }
-
-  void _handleMirrorPointerUp(PointerEvent event) {
-    final wasPrimary = _mirrorPrimaryPointer == event.pointer;
-    _mirrorActivePointers.remove(event.pointer);
-    if (wasPrimary) {
-      _sendMirrorTouchUp();
-      _mirrorPrimaryPointer = null;
-    }
-    if (_mirrorActivePointers.isEmpty) {
-      _mirrorPrimaryPointer = null;
+    if (latestFrame != null && mounted) {
+      setState(() {
+        _screenFrame = latestFrame;
+        _mirrorStatus = 'Mirror receiving';
+      });
     }
   }
 
@@ -1283,7 +1214,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     if (_tabIndex == _mirrorTab) {
-      _mirrorActivePointers.clear();
       await SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
         DeviceOrientation.portraitDown,
@@ -1437,7 +1367,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _exitMirrorPage() async {
-    _mirrorActivePointers.clear();
     _disconnectMirror();
     await _setTabIndex(_actionsTab);
   }
@@ -2081,6 +2010,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 width: double.infinity,
                 child: FilledButton.icon(
                   onPressed: _remoteConnected ? _toggleAudio : null,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _audioEnabled ? _successSoft : _fieldFill,
+                    foregroundColor: _audioEnabled ? Colors.black : _accentSoft,
+                    disabledBackgroundColor: _fieldFill.withValues(alpha: 0.72),
+                    disabledForegroundColor: _mutedText,
+                    side: BorderSide(
+                      color: _audioEnabled ? _successSoft : _panelBorder,
+                      width: 1.2,
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                  ),
                   icon: Icon(_audioEnabled
                       ? Icons.volume_off_rounded
                       : Icons.speaker_group_rounded),
@@ -2095,55 +2038,83 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         const SizedBox(height: 14),
         _SectionCard(
           title: 'Media Controls',
-          child: GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 3,
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            childAspectRatio: 1.45,
+          child: Column(
             children: [
-              _MediaControlButton(
-                label: 'Previous',
-                icon: Icons.skip_previous_rounded,
-                enabled: _remoteConnected,
-                onTap: () => _sendMediaAction('previous'),
+              Row(
+                children: [
+                  Expanded(
+                    child: _MediaControlButton(
+                      label: 'Previous',
+                      icon: Icons.skip_previous_rounded,
+                      enabled: _remoteConnected,
+                      onTap: () => _sendMediaAction('previous'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 2,
+                    child: _MediaControlButton(
+                      label: 'Play / Pause',
+                      icon: Icons.play_arrow_rounded,
+                      enabled: _remoteConnected,
+                      prominent: true,
+                      onTap: () => _sendMediaAction('playpause'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _MediaControlButton(
+                      label: 'Next',
+                      icon: Icons.skip_next_rounded,
+                      enabled: _remoteConnected,
+                      onTap: () => _sendMediaAction('next'),
+                    ),
+                  ),
+                ],
               ),
-              _MediaControlButton(
-                label: 'Play',
-                icon: Icons.play_arrow_rounded,
-                enabled: _remoteConnected,
-                onTap: () => _sendMediaAction('playpause'),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _MediaControlButton(
+                      label: 'Stop',
+                      icon: Icons.stop_rounded,
+                      enabled: _remoteConnected,
+                      onTap: () => _sendMediaAction('stop'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _MediaControlButton(
+                      label: 'Mute',
+                      icon: Icons.volume_off_rounded,
+                      enabled: _remoteConnected,
+                      onTap: () => _sendMediaAction('mute'),
+                    ),
+                  ),
+                ],
               ),
-              _MediaControlButton(
-                label: 'Next',
-                icon: Icons.skip_next_rounded,
-                enabled: _remoteConnected,
-                onTap: () => _sendMediaAction('next'),
-              ),
-              _MediaControlButton(
-                label: 'Stop',
-                icon: Icons.stop_rounded,
-                enabled: _remoteConnected,
-                onTap: () => _sendMediaAction('stop'),
-              ),
-              _MediaControlButton(
-                label: 'Mute',
-                icon: Icons.volume_off_rounded,
-                enabled: _remoteConnected,
-                onTap: () => _sendMediaAction('mute'),
-              ),
-              _MediaControlButton(
-                label: 'Vol +',
-                icon: Icons.volume_up_rounded,
-                enabled: _remoteConnected,
-                onTap: () => _sendMediaAction('volumeup'),
-              ),
-              _MediaControlButton(
-                label: 'Vol -',
-                icon: Icons.volume_down_rounded,
-                enabled: _remoteConnected,
-                onTap: () => _sendMediaAction('volumedown'),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _MediaControlButton(
+                      label: 'Volume Down',
+                      icon: Icons.volume_down_rounded,
+                      enabled: _remoteConnected,
+                      onTap: () => _sendMediaAction('volumedown'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _MediaControlButton(
+                      label: 'Volume Up',
+                      icon: Icons.volume_up_rounded,
+                      enabled: _remoteConnected,
+                      onTap: () => _sendMediaAction('volumeup'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -2235,32 +2206,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 )
               : AspectRatio(
                   aspectRatio: 16 / 9,
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      return InteractiveViewer(
-                        panEnabled: false,
-                        minScale: 1,
-                        maxScale: 5,
-                        child: Listener(
-                          onPointerDown: (event) =>
-                              _handleMirrorPointerDown(event, constraints),
-                          onPointerMove: (event) =>
-                              _handleMirrorPointerMove(event, constraints),
-                          onPointerUp: _handleMirrorPointerUp,
-                          onPointerCancel: _handleMirrorPointerUp,
-                          child: Container(
-                            width: double.infinity,
-                            height: double.infinity,
-                            color: Colors.black,
-                            child: Image.memory(
-                              _screenFrame!,
-                              gaplessPlayback: true,
-                              fit: BoxFit.fill,
-                            ),
-                          ),
-                        ),
-                      );
-                    },
+                  child: Container(
+                    width: double.infinity,
+                    height: double.infinity,
+                    color: Colors.black,
+                    child: Image.memory(
+                      _screenFrame!,
+                      gaplessPlayback: true,
+                      filterQuality: FilterQuality.low,
+                      fit: BoxFit.fill,
+                    ),
                   ),
                 ),
         ),
@@ -2503,12 +2458,14 @@ class _MediaControlButton extends StatelessWidget {
     required this.icon,
     required this.enabled,
     required this.onTap,
+    this.prominent = false,
   });
 
   final String label;
   final IconData icon;
   final bool enabled;
   final VoidCallback onTap;
+  final bool prominent;
 
   @override
   Widget build(BuildContext context) {
@@ -2517,7 +2474,7 @@ class _MediaControlButton extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 22),
+          Icon(icon, size: prominent ? 28 : 22),
           const SizedBox(height: 4),
           Text(
             label,
@@ -2529,12 +2486,17 @@ class _MediaControlButton extends StatelessWidget {
         ],
       ),
       style: FilledButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-        backgroundColor: _fieldFill,
-        foregroundColor: _accentSoft,
+        minimumSize: Size.fromHeight(prominent ? 76 : 64),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+        backgroundColor:
+            prominent ? _accentSoft.withValues(alpha: 0.18) : _fieldFill,
+        foregroundColor: prominent ? Colors.white : _accentSoft,
         disabledBackgroundColor: _fieldFill.withValues(alpha: 0.72),
         disabledForegroundColor: _mutedText,
-        side: const BorderSide(color: _panelBorder),
+        side: BorderSide(
+          color: prominent ? _accentSoft : _panelBorder,
+          width: 1.2,
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
       ),
     );
