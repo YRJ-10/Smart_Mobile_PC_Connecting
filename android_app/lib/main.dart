@@ -133,8 +133,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _audioEnabled = false;
   bool _mirrorConnected = false;
   bool _voiceListening = false;
+  bool _bootstrapping = true;
   int _tabIndex = 0;
   String _status = 'Ready';
+  String _bootstrapStatus = 'Preparing Smart MPC';
   String _remoteStatus = 'Remote disconnected';
   String _audioStatus = 'PC audio off';
   String _mirrorStatus = 'Mirror disconnected';
@@ -277,10 +279,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _bootstrap() async {
-    await _loadConfig();
-    _ensureDeviceId();
-    final link = await _prefs.invokeMethod<String>('consumeInitialDeepLink');
-    await _handleDeepLink(link);
+    try {
+      if (mounted) {
+        setState(() => _bootstrapStatus = 'Loading saved connection');
+      }
+      await _loadConfig();
+      _ensureDeviceId();
+      if (mounted) {
+        setState(() => _bootstrapStatus = 'Checking launch action');
+      }
+      final link = await _prefs.invokeMethod<String>('consumeInitialDeepLink');
+      await _handleDeepLink(link);
+    } finally {
+      if (mounted) {
+        setState(() => _bootstrapping = false);
+      }
+    }
     unawaited(_autoConnectToTrustedPc(forceDiscovery: true));
   }
 
@@ -1313,6 +1327,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    if (_bootstrapping) {
+      return _buildBootPage();
+    }
+
     final pages = [
       _buildActionsPage(),
       _buildRemotePage(),
@@ -1363,6 +1381,55 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     icon: Icon(Icons.lan_rounded), label: 'Connect'),
               ],
             ),
+    );
+  }
+
+  Widget _buildBootPage() {
+    return Scaffold(
+      backgroundColor: _appBackground,
+      body: Center(
+        child: Container(
+          width: 220,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 26),
+          decoration: BoxDecoration(
+            color: _panelColor,
+            borderRadius: BorderRadius.circular(7),
+            border: Border.all(color: _panelBorder, width: 1.2),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                height: 34,
+                width: 34,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  color: _accentSoft,
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Smart MPC',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 18,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _bootstrapStatus,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: _mutedText,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
