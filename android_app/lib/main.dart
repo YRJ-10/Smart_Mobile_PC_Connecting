@@ -1620,24 +1620,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               }),
             ),
             const SizedBox(height: 12),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _remoteSpecialKeyButton(
-                      'Alt+Tab', Icons.compare_arrows_rounded, 'alttab'),
-                  _remoteSpecialKeyButton(
-                      'Enter', Icons.keyboard_return_rounded, 'enter'),
-                  _remoteSpecialKeyButton(
-                      'Bksp', Icons.backspace_rounded, 'backspace'),
-                  _remoteSpecialKeyButton(
-                      'Refresh', Icons.refresh_rounded, 'f5'),
-                  _remoteSpecialKeyButton(
-                      'Copy', Icons.content_copy_rounded, 'copy'),
-                  _remoteSpecialKeyButton(
-                      'Paste', Icons.content_paste_rounded, 'paste'),
-                ],
-              ),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final buttonWidth =
+                    ((constraints.maxWidth - 24) / 4).clamp(64.0, 76.0);
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _remoteSpecialKeyButton(
+                          'Alt+Tab', Icons.compare_arrows_rounded, 'alttab',
+                          width: buttonWidth),
+                      _remoteSpecialKeyButton(
+                          'Enter', Icons.keyboard_return_rounded, 'enter',
+                          width: buttonWidth),
+                      _remoteSpecialKeyButton(
+                          'Bksp', Icons.backspace_rounded, 'backspace',
+                          width: buttonWidth),
+                      _remoteSpecialKeyButton(
+                          'Refresh', Icons.refresh_rounded, 'f5',
+                          width: buttonWidth),
+                      _remoteSpecialKeyButton(
+                          'Copy', Icons.content_copy_rounded, 'copy',
+                          width: buttonWidth),
+                      _remoteSpecialKeyButton(
+                          'Paste', Icons.content_paste_rounded, 'paste',
+                          width: buttonWidth),
+                    ],
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 16),
             GestureDetector(
@@ -1766,12 +1778,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _remoteSpecialKeyButton(String label, IconData icon, String keyId) {
+  Widget _remoteSpecialKeyButton(String label, IconData icon, String keyId,
+      {double width = 76}) {
     return Padding(
-      padding: const EdgeInsets.only(right: 8),
+      padding: const EdgeInsets.only(right: 6),
       child: SizedBox(
         height: 54,
-        width: 76,
+        width: width,
         child: ElevatedButton(
           onPressed: () => _sendRemoteCommand({
             'type': 'SPECIAL_KEY',
