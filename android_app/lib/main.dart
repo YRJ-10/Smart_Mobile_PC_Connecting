@@ -167,7 +167,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   DateTime _lastMoveTime = DateTime.now();
   DateTime _lastTwoFingerNavTime = DateTime.fromMillisecondsSinceEpoch(0);
   bool _trackpadDragging = false;
-  Timer? _dragStartTimer;
   int? _mirrorPrimaryPointer;
   static const int _audioPort = 8081;
   bool _autoConnectInFlight = false;
@@ -199,7 +198,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _prefs.invokeMethod('stopAudioReceiver');
     _controlSocket?.destroy();
     _screenSocket?.destroy();
-    _dragStartTimer?.cancel();
     _baseUrlController.dispose();
     _pairingTokenController.dispose();
     _urlController.dispose();
@@ -784,22 +782,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (_pointerPositions.length == 1) {
       _pointerDownTime = DateTime.now();
       _peakPointerCount = 1;
-      _dragStartTimer?.cancel();
-      _dragStartTimer = Timer(const Duration(milliseconds: 450), () {
-        if (_pointerPositions.length == 1 && !_trackpadDragging) {
-          _trackpadDragging = true;
-          _sendRemoteCommand({'type': 'MOUSE_DRAG', 'action': 'down'});
-          if (mounted) {
-            setState(() => _remoteStatus = 'Drag active');
-          }
-        }
-      });
     }
     if (_pointerPositions.length > _peakPointerCount) {
       _peakPointerCount = _pointerPositions.length;
-      if (_pointerPositions.length > 1) {
-        _dragStartTimer?.cancel();
-      }
     }
   }
 
@@ -822,7 +807,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _accumulatedDy = 0;
       }
     } else if (_pointerPositions.length >= 2) {
-      _dragStartTimer?.cancel();
       final now = DateTime.now();
       if (now.difference(_lastMoveTime).inMilliseconds >= 16) {
         final dy = event.delta.dy;
@@ -834,22 +818,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _onTrackpadPointerUp(PointerUpEvent event) {
+  void _onTrackpadPointerUp(PointerEvent event) {
     final startPos = _pointerStartPositions[event.pointer];
     final endPos = event.localPosition;
     final duration = DateTime.now().difference(_pointerDownTime).inMilliseconds;
-    _dragStartTimer?.cancel();
 
     if (_trackpadDragging) {
-      _sendRemoteCommand({'type': 'MOUSE_DRAG', 'action': 'up'});
-      _trackpadDragging = false;
       _pointerPositions.remove(event.pointer);
       _pointerStartPositions.remove(event.pointer);
       if (_pointerPositions.isEmpty) {
         _peakPointerCount = 0;
-        if (mounted) {
-          setState(() => _remoteStatus = 'Remote connected');
-        }
       }
       return;
     }
@@ -908,6 +886,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (dx.abs() < 90) return false;
     if (dy.abs() > 45) return false;
     return dx.abs() > dy.abs() * 2.8;
+  }
+
+  void _startTrackpadDragHold(PointerDownEvent event) {
+    if (_trackpadDragging) return;
+    _trackpadDragging = true;
+    _sendRemoteCommand({'type': 'MOUSE_DRAG', 'action': 'down'});
+    if (mounted) {
+      setState(() => _remoteStatus = 'Drag hold active');
+    }
+  }
+
+  void _stopTrackpadDragHold(PointerEvent event) {
+    if (!_trackpadDragging) return;
+    _trackpadDragging = false;
+    _sendRemoteCommand({'type': 'MOUSE_DRAG', 'action': 'up'});
+    if (mounted) {
+      setState(() => _remoteStatus = 'Remote connected');
+    }
   }
 
   void _onLiveTextChanged(String value) {
@@ -1920,51 +1916,117 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
             const SizedBox(height: 20),
             Expanded(
-              child: Listener(
-                onPointerDown: _onTrackpadPointerDown,
-                onPointerMove: _onTrackpadPointerMove,
-                onPointerUp: _onTrackpadPointerUp,
-                child: Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: _fieldFill,
-                    borderRadius: BorderRadius.circular(7),
-                    border: Border.all(
-                      color: _panelBorder,
-                      width: 1.2,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: Listener(
+                      onPointerDown: _onTrackpadPointerDown,
+                      onPointerMove: _onTrackpadPointerMove,
+                      onPointerUp: _onTrackpadPointerUp,
+                      onPointerCancel: _onTrackpadPointerUp,
+                      child: Container(
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: _fieldFill,
+                          borderRadius: BorderRadius.circular(7),
+                          border: Border.all(
+                            color: _panelBorder,
+                            width: 1.2,
+                          ),
+                        ),
+                        child: const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.touch_app_rounded,
+                                color: Colors.white24,
+                                size: 48,
+                              ),
+                              SizedBox(height: 12),
+                              Text(
+                                'TOUCHPAD',
+                                style: TextStyle(
+                                  color: Colors.white30,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0,
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'Tap - 2-Finger Tap - 2-Finger Swipe',
+                                style: TextStyle(
+                                  color: Colors.white24,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                  child: const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.touch_app_rounded,
-                          color: Colors.white24,
-                          size: 48,
+                  Positioned(
+                    left: 14,
+                    bottom: 14,
+                    child: Listener(
+                      onPointerDown: _startTrackpadDragHold,
+                      onPointerUp: _stopTrackpadDragHold,
+                      onPointerCancel: _stopTrackpadDragHold,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 120),
+                        height: 54,
+                        width: 54,
+                        decoration: BoxDecoration(
+                          color: _trackpadDragging
+                              ? _accentSoft.withValues(alpha: 0.22)
+                              : _panelColor.withValues(alpha: 0.92),
+                          borderRadius: BorderRadius.circular(7),
+                          border: Border.all(
+                            color:
+                                _trackpadDragging ? _accentSoft : _panelBorder,
+                            width: 1.2,
+                          ),
+                          boxShadow: _trackpadDragging
+                              ? [
+                                  BoxShadow(
+                                    color: _accentSoft.withValues(alpha: 0.18),
+                                    blurRadius: 10,
+                                  )
+                                ]
+                              : const [],
                         ),
-                        SizedBox(height: 12),
-                        Text(
-                          'TOUCHPAD',
+                        child: Icon(
+                          Icons.back_hand_rounded,
+                          color:
+                              _trackpadDragging ? _accentSoft : Colors.white54,
+                          size: 26,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 76,
+                    bottom: 19,
+                    child: IgnorePointer(
+                      child: AnimatedOpacity(
+                        opacity: _trackpadDragging ? 1 : 0.58,
+                        duration: const Duration(milliseconds: 120),
+                        child: Text(
+                          _trackpadDragging ? 'Dragging' : 'Hold to drag',
                           style: TextStyle(
-                            color: Colors.white30,
-                            fontSize: 16,
+                            color: _trackpadDragging
+                                ? _accentSoft
+                                : Colors.white38,
+                            fontSize: 11,
                             fontWeight: FontWeight.w700,
-                            letterSpacing: 0,
                           ),
                         ),
-                        SizedBox(height: 4),
-                        Text(
-                          'Tap - 2-Finger Tap - 2-Finger Swipe',
-                          style: TextStyle(
-                            color: Colors.white24,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
             ),
             const SizedBox(height: 10),
