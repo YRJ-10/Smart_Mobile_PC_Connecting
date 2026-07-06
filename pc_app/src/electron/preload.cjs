@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld("smartMpc", {
   startServer: () => ipcRenderer.invoke("server:start"),
   stopServer: () => ipcRenderer.invoke("server:stop"),
   revokeDevice: (deviceId) => ipcRenderer.invoke("server:revokeDevice", deviceId),
+  getStartupSettings: () => ipcRenderer.invoke("app:getStartupSettings"),
+  setStartupEnabled: (enabled) => ipcRenderer.invoke("app:setStartupEnabled", enabled),
   copy: (text) => ipcRenderer.invoke("ui:copy", text),
   openInbox: () => ipcRenderer.invoke("ui:openInbox"),
   openOutbox: () => ipcRenderer.invoke("ui:openOutbox"),

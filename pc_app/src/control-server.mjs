@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
-import { resolve } from "node:path";
-import { APP_DIR, saveConfig } from "./config.mjs";
-import { pythonCommand } from "./python-runtime.mjs";
+import { join } from "node:path";
+import { WORKER_DIR, saveConfig } from "./config.mjs";
+import { workerInvocation } from "./python-runtime.mjs";
 
 const CONTROL_PORT = 8080;
 
@@ -165,8 +165,9 @@ export class ControlServer {
   #ensureWorker() {
     if (this.#worker && !this.#worker.killed) return this.#worker;
 
-    const workerPath = resolve(APP_DIR, "..", "pc_worker", "worker.py");
-    this.#worker = spawn(pythonCommand(), [workerPath], {
+    const workerPath = join(WORKER_DIR, "worker.py");
+    const worker = workerInvocation(workerPath, "smart-mpc-worker.exe");
+    this.#worker = spawn(worker.command, worker.args, {
       windowsHide: true,
       stdio: ["pipe", "pipe", "pipe"]
     });

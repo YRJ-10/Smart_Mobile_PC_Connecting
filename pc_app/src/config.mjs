@@ -1,14 +1,25 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_HOST, DEFAULT_PORT } from "./constants.mjs";
 
 const SRC_DIR = dirname(fileURLToPath(import.meta.url));
 export const APP_DIR = dirname(SRC_DIR);
-export const CONFIG_PATH = join(APP_DIR, "config.json");
-export const DEFAULT_INBOX_DIR = join(APP_DIR, "inbox");
-export const DEFAULT_OUTBOX_DIR = join(APP_DIR, "outbox");
+const IS_PACKAGED = APP_DIR.includes(".asar");
+export const RUNTIME_DIR =
+  process.env.SMART_MPC_RUNTIME_DIR ||
+  (IS_PACKAGED
+    ? join(process.env.APPDATA || dirname(process.execPath), "Smart MPC")
+    : APP_DIR);
+export const WORKER_DIR =
+  process.env.SMART_MPC_WORKER_DIR ||
+  (IS_PACKAGED && process.resourcesPath
+    ? join(process.resourcesPath, "pc_worker")
+    : resolve(APP_DIR, "..", "pc_worker"));
+export const CONFIG_PATH = join(RUNTIME_DIR, "config.json");
+export const DEFAULT_INBOX_DIR = join(RUNTIME_DIR, "inbox");
+export const DEFAULT_OUTBOX_DIR = join(RUNTIME_DIR, "outbox");
 
 function token() {
   return randomUUID().replaceAll("-", "");

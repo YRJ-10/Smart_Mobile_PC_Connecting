@@ -7,9 +7,47 @@
   "scripts": {
     "start": "electron .",
     "server": "node src/index.mjs",
-    "check": "node --check src/index.mjs && node --check src/server.mjs && node --check src/control-server.mjs && node --check src/discovery-server.mjs && node --check src/screen-server.mjs && node --check src/python-runtime.mjs && node --check src/config.mjs && node --check src/network.mjs && node --check src/request-log.mjs && node --check src/electron/main.mjs && node --check src/electron/preload.cjs && node --check renderer/renderer.js"
+    "check": "node --check src/index.mjs && node --check src/server.mjs && node --check src/control-server.mjs && node --check src/discovery-server.mjs && node --check src/screen-server.mjs && node --check src/python-runtime.mjs && node --check src/config.mjs && node --check src/network.mjs && node --check src/request-log.mjs && node --check src/electron/main.mjs && node --check src/electron/preload.cjs && node --check renderer/renderer.js",
+    "build": "electron-builder --win portable dir",
+    "build:workers": "powershell.exe -ExecutionPolicy Bypass -File ..\\scripts\\build-pc-workers.ps1"
+  },
+  "build": {
+    "appId": "com.smartmpc.pcserver",
+    "productName": "Smart MPC PC Server",
+    "artifactName": "Smart-MPC-PC-Server-${version}-${arch}.${ext}",
+    "asar": true,
+    "files": [
+      "assets/**/*",
+      "renderer/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/appicon.png",
+        "to": "appicon.png"
+      },
+      {
+        "from": "../pc_worker/dist",
+        "to": "pc_worker",
+        "filter": [
+          "*.exe"
+        ]
+      }
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "icon": "assets/appicon.ico",
+      "target": [
+        "portable",
+        "dir"
+      ]
+    }
   },
   "devDependencies": {
-    "electron": "^42.5.0"
+    "electron": "^42.5.0",
+    "electron-builder": "^26.15.3"
   }
 }

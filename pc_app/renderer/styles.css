@@ -102,6 +102,43 @@ span,
   gap: 10px;
 }
 
+.toggle-row {
+  align-items: center;
+  border: 1px solid #253139;
+  border-radius: 6px;
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+  min-height: 58px;
+  padding: 10px 12px;
+}
+
+.toggle-row input {
+  accent-color: #8edfd1;
+  height: 20px;
+  width: 20px;
+}
+
+.toggle-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.toggle-row strong {
+  color: #e8edf0;
+  font-size: 13px;
+}
+
+.toggle-row small {
+  color: #9aa8af;
+  font-size: 12px;
+}
+
+.toggle-row.disabled {
+  opacity: 0.58;
+}
+
 .status-pill,
 .count {
   border: 1px solid #3b4850;

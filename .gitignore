@@ -111,6 +111,8 @@ pc_app/inbox/
 pc_app/outbox/
 pc_app/logs/
 pc_worker/logs/
+pc_worker/build/
+pc_worker/dist/
 
 # Generated media/runtime captures
 captures/

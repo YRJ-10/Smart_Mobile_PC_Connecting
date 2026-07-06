@@ -6,6 +6,9 @@ import { SmartMpcServer } from "../server.mjs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const appRoot = join(__dirname, "..", "..");
 const rendererRoot = join(appRoot, "renderer");
+const iconPath = app.isPackaged
+  ? join(process.resourcesPath, "appicon.png")
+  : join(appRoot, "assets", "appicon.png");
 const server = new SmartMpcServer();
 
 let mainWindow = null;
@@ -20,6 +23,7 @@ function createWindow({ showOnReady = false } = {}) {
     minHeight: 640,
     title: "Smart MPC",
     backgroundColor: "#101417",
+    icon: iconPath,
     show: false,
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
@@ -54,12 +58,35 @@ function showMainWindow() {
 
 function createTray() {
   if (tray) return;
-  const icon = nativeImage.createFromPath(join(appRoot, "assets", "tray.svg"));
+  const icon = nativeImage.createFromPath(iconPath);
   tray = new Tray(icon);
   tray.setToolTip("Smart MPC");
   tray.on("click", showMainWindow);
   tray.on("double-click", showMainWindow);
   updateTrayMenu();
+}
+
+function startupSettings() {
+  const settings = app.getLoginItemSettings({
+    path: process.execPath
+  });
+  return {
+    supported: process.platform === "win32",
+    enabled: Boolean(settings.openAtLogin),
+    path: process.execPath
+  };
+}
+
+function setStartupEnabled(enabled) {
+  if (process.platform !== "win32") {
+    return startupSettings();
+  }
+  app.setLoginItemSettings({
+    openAtLogin: Boolean(enabled),
+    path: process.execPath,
+    args: []
+  });
+  return startupSettings();
 }
 
 function updateTrayMenu() {
@@ -141,6 +168,8 @@ ipcMain.handle("server:stop", async () => {
   return state;
 });
 ipcMain.handle("server:revokeDevice", (_event, deviceId) => server.revokeDevice(deviceId));
+ipcMain.handle("app:getStartupSettings", () => startupSettings());
+ipcMain.handle("app:setStartupEnabled", (_event, enabled) => setStartupEnabled(enabled));
 
 ipcMain.handle("ui:copy", (_event, text) => {
   clipboard.writeText(String(text ?? ""));

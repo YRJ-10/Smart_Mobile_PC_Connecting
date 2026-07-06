@@ -15,6 +15,7 @@ const baseUrlList = document.querySelector("#baseUrlList");
 const openInboxButton = document.querySelector("#openInboxButton");
 const openOutboxButton = document.querySelector("#openOutboxButton");
 const addOutboxFilesButton = document.querySelector("#addOutboxFilesButton");
+const startupToggle = document.querySelector("#startupToggle");
 const outboxFileList = document.querySelector("#outboxFileList");
 const deviceList = document.querySelector("#deviceList");
 const deviceCount = document.querySelector("#deviceCount");
@@ -22,6 +23,7 @@ const logList = document.querySelector("#logList");
 const logCount = document.querySelector("#logCount");
 
 let currentState = null;
+let startupSettings = null;
 let refreshTimer = null;
 
 function setText(element, value) {
@@ -196,9 +198,17 @@ function render(state) {
   showError(state?.startup_error ?? "");
 }
 
+function renderStartup(settings) {
+  startupSettings = settings;
+  startupToggle.checked = Boolean(settings?.enabled);
+  startupToggle.disabled = !settings?.supported;
+  startupToggle.closest(".toggle-row")?.classList.toggle("disabled", !settings?.supported);
+}
+
 async function refresh() {
   try {
     render(await api.getState());
+    renderStartup(await api.getStartupSettings());
   } catch (error) {
     showError(error.message);
   }
@@ -222,6 +232,18 @@ openOutboxButton.addEventListener("click", () => api.openOutbox());
 addOutboxFilesButton.addEventListener("click", async () => {
   const result = await api.addFilesToOutbox();
   render(result.state);
+});
+
+startupToggle.addEventListener("change", async () => {
+  startupToggle.disabled = true;
+  try {
+    renderStartup(await api.setStartupEnabled(startupToggle.checked));
+  } catch (error) {
+    startupToggle.checked = Boolean(startupSettings?.enabled);
+    showError(error.message);
+  } finally {
+    startupToggle.disabled = !startupSettings?.supported;
+  }
 });
 
 refresh();
