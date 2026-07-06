@@ -5,7 +5,10 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -26,6 +29,13 @@ class NfcLaunchActivity : Activity() {
     private lateinit var messageView: TextView
     private lateinit var progressView: ProgressBar
     private var started = false
+
+    private val appBackground = Color.rgb(15, 20, 22)
+    private val panelColor = Color.rgb(21, 27, 31)
+    private val panelBorder = Color.rgb(52, 66, 72)
+    private val accentSoft = Color.rgb(142, 223, 209)
+    private val textPrimary = Color.rgb(236, 242, 244)
+    private val textMuted = Color.rgb(154, 168, 175)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -146,29 +156,46 @@ class NfcLaunchActivity : Activity() {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.rgb(13, 17, 23))
+            setBackgroundColor(appBackground)
             setPadding(48, 48, 48, 48)
         }
 
-        progressView = ProgressBar(this).apply { isIndeterminate = true }
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(44, 38, 44, 38)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 18f
+                setColor(panelColor)
+                setStroke(2, panelBorder)
+            }
+        }
+
+        progressView = ProgressBar(this).apply {
+            isIndeterminate = true
+            indeterminateTintList = ColorStateList.valueOf(accentSoft)
+        }
         titleView = TextView(this).apply {
             text = "Smart MPC"
-            setTextColor(Color.rgb(230, 237, 243))
+            setTextColor(textPrimary)
             textSize = 20f
+            typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             setPadding(0, 28, 0, 0)
         }
         messageView = TextView(this).apply {
             text = "Reading context..."
-            setTextColor(Color.rgb(139, 148, 158))
+            setTextColor(textMuted)
             textSize = 14f
             gravity = Gravity.CENTER
             setPadding(0, 10, 0, 0)
         }
 
-        layout.addView(progressView)
-        layout.addView(titleView)
-        layout.addView(messageView)
+        panel.addView(progressView)
+        panel.addView(titleView)
+        panel.addView(messageView)
+        layout.addView(panel)
         setContentView(layout)
     }
 

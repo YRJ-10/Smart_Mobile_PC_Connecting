@@ -40,16 +40,16 @@ def draw_cursor(frame, monitor):
     points = np.array(
         [
             [x, y],
-            [x, y + 25],
-            [x + 7, y + 20],
-            [x + 12, y + 33],
-            [x + 18, y + 31],
-            [x + 13, y + 18],
-            [x + 24, y + 18],
+            [x, y + 18],
+            [x + 5, y + 15],
+            [x + 9, y + 24],
+            [x + 14, y + 22],
+            [x + 10, y + 13],
+            [x + 18, y + 13],
         ],
         dtype=np.int32,
     )
-    cv2.polylines(frame, [points], True, (0, 0, 0), 4, lineType=cv2.LINE_AA)
+    cv2.polylines(frame, [points], True, (0, 0, 0), 3, lineType=cv2.LINE_AA)
     cv2.fillPoly(frame, [points], (255, 255, 255), lineType=cv2.LINE_AA)
     cv2.polylines(frame, [points], True, (20, 20, 20), 1, lineType=cv2.LINE_AA)
     return frame
