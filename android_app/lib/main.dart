@@ -44,8 +44,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   static const _prefs = MethodChannel('smart_mpc/preferences');
   static const int _actionsTab = 0;
   static const int _remoteTab = 1;
-  static const int _mirrorTab = 2;
-  static const int _connectTab = 3;
+  static const int _mediaTab = 2;
+  static const int _mirrorTab = 3;
+  static const int _connectTab = 4;
 
   final _baseUrlController =
       TextEditingController(text: 'http://192.168.1.10:8765');
@@ -949,6 +950,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
+  void _sendMediaAction(String action) {
+    _sendRemoteCommand({
+      'type': 'MEDIA',
+      'action': action,
+    });
+    setState(() => _audioStatus = 'Media command sent: $action');
+  }
+
   Future<void> _connectMirror() async {
     if (!_isTrusted) {
       setState(() => _mirrorStatus = 'Trust this phone first');
@@ -1132,7 +1141,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _setTabIndex(int index) async {
     if (index < _actionsTab || index > _connectTab) return;
 
-    if (index == _remoteTab) {
+    if (index == _remoteTab || index == _mediaTab) {
       unawaited(_autoConnectToTrustedPc());
     }
 
@@ -1252,6 +1261,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final pages = [
       _buildActionsPage(),
       _buildRemotePage(),
+      _buildMediaPage(),
       _buildMirrorPage(),
       _buildConnectPage(),
     ];
@@ -1289,6 +1299,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     icon: Icon(Icons.bolt_rounded), label: 'Actions'),
                 NavigationDestination(
                     icon: Icon(Icons.touch_app_rounded), label: 'Remote'),
+                NavigationDestination(
+                    icon: Icon(Icons.graphic_eq_rounded), label: 'Media'),
                 NavigationDestination(
                     icon: Icon(Icons.screenshot_monitor_rounded),
                     label: 'Mirror'),
@@ -1638,24 +1650,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   spacing: 8,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    if (_remoteConnected)
-                      Tooltip(
-                        message: _audioEnabled
-                            ? 'Turn PC audio off'
-                            : 'Turn PC audio on',
-                        child: IconButton.filledTonal(
-                          visualDensity: VisualDensity.compact,
-                          onPressed: _toggleAudio,
-                          icon: Icon(
-                            _audioEnabled
-                                ? Icons.speaker_group_rounded
-                                : Icons.volume_off_rounded,
-                            color: _audioEnabled
-                                ? const Color(0xFF64FFDA)
-                                : Colors.redAccent,
-                          ),
-                        ),
-                      ),
                     Icon(
                       _remoteConnected ? Icons.wifi : Icons.wifi_off,
                       color: _remoteConnected
@@ -1681,14 +1675,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       fontSize: 12,
                     ),
                   ),
-                  if (_remoteConnected)
-                    Text(
-                      _audioStatus,
-                      style: const TextStyle(
-                        color: Colors.white38,
-                        fontSize: 12,
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -1851,6 +1837,126 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildMediaPage() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _SectionCard(
+          title: 'PC Audio',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    _remoteConnected ? Icons.wifi : Icons.wifi_off,
+                    color: _remoteConnected
+                        ? Colors.greenAccent
+                        : Colors.redAccent,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _remoteConnected
+                          ? 'Remote connected'
+                          : 'Waiting for trusted PC',
+                      style: TextStyle(
+                        color: _remoteConnected
+                            ? Colors.greenAccent
+                            : const Color(0xFF9AA8AF),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  IconButton.filledTonal(
+                    tooltip: 'Refresh connection',
+                    onPressed: () => unawaited(
+                        _autoConnectToTrustedPc(forceDiscovery: true)),
+                    icon: const Icon(Icons.refresh_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _audioStatus,
+                style: const TextStyle(color: Color(0xFF9AA8AF)),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _remoteConnected ? _toggleAudio : null,
+                  icon: Icon(_audioEnabled
+                      ? Icons.volume_off_rounded
+                      : Icons.speaker_group_rounded),
+                  label: Text(_audioEnabled
+                      ? 'Stop PC Audio'
+                      : 'Start PC Audio Stream'),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _SectionCard(
+          title: 'Media Controls',
+          child: GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 3,
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            childAspectRatio: 1.45,
+            children: [
+              _MediaControlButton(
+                label: 'Previous',
+                icon: Icons.skip_previous_rounded,
+                enabled: _remoteConnected,
+                onTap: () => _sendMediaAction('previous'),
+              ),
+              _MediaControlButton(
+                label: 'Play',
+                icon: Icons.play_arrow_rounded,
+                enabled: _remoteConnected,
+                onTap: () => _sendMediaAction('playpause'),
+              ),
+              _MediaControlButton(
+                label: 'Next',
+                icon: Icons.skip_next_rounded,
+                enabled: _remoteConnected,
+                onTap: () => _sendMediaAction('next'),
+              ),
+              _MediaControlButton(
+                label: 'Stop',
+                icon: Icons.stop_rounded,
+                enabled: _remoteConnected,
+                onTap: () => _sendMediaAction('stop'),
+              ),
+              _MediaControlButton(
+                label: 'Mute',
+                icon: Icons.volume_off_rounded,
+                enabled: _remoteConnected,
+                onTap: () => _sendMediaAction('mute'),
+              ),
+              _MediaControlButton(
+                label: 'Vol +',
+                icon: Icons.volume_up_rounded,
+                enabled: _remoteConnected,
+                onTap: () => _sendMediaAction('volumeup'),
+              ),
+              _MediaControlButton(
+                label: 'Vol -',
+                icon: Icons.volume_down_rounded,
+                enabled: _remoteConnected,
+                onTap: () => _sendMediaAction('volumedown'),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -2194,6 +2300,45 @@ class _FileTransferIndicator extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _MediaControlButton extends StatelessWidget {
+  const _MediaControlButton({
+    required this.label,
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.tonal(
+      onPressed: enabled ? onTap : null,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 22),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+      style: FilledButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }

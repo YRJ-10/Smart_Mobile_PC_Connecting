@@ -76,8 +76,7 @@ def execute_command(cmd):
             pyautogui.keyUp("ctrl")
     elif action_type == "MEDIA":
         require_pyautogui()
-        if cmd.get("action") == "playpause":
-            pyautogui.press("playpause")
+        execute_media_action(str(cmd.get("action", "")))
     elif action_type in ("TOUCH_DOWN", "TOUCH_MOVE", "TOUCH_UP"):
         require_pyautogui()
         screen_width, screen_height = pyautogui.size()
@@ -175,6 +174,21 @@ def execute_special_key(key):
     elif key == "browserforward":
         pyautogui.hotkey("alt", "right")
     else:
+        pyautogui.press(key)
+
+
+def execute_media_action(action):
+    key_map = {
+        "playpause": "playpause",
+        "previous": "prevtrack",
+        "next": "nexttrack",
+        "stop": "stop",
+        "mute": "volumemute",
+        "volumeup": "volumeup",
+        "volumedown": "volumedown",
+    }
+    key = key_map.get(action)
+    if key:
         pyautogui.press(key)
 
 
