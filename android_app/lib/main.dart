@@ -8,6 +8,16 @@ import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
+const _appBackground = Color(0xFF0F1416);
+const _panelColor = Color(0xFF151B1F);
+const _panelBorder = Color(0xFF344248);
+const _fieldFill = Color(0xFF11191C);
+const _accentSoft = Color(0xFF8EDFD1);
+const _successSoft = Color(0xFF8FDCAD);
+const _warningSoft = Color(0xFFE2B978);
+const _dangerSoft = Color(0xFFD87A7A);
+const _mutedText = Color(0xFF9AA8AF);
+
 void main() {
   runApp(const SmartMpcApp());
 }
@@ -23,10 +33,73 @@ class SmartMpcApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2DD4BF),
+          seedColor: _accentSoft,
           brightness: Brightness.dark,
         ),
-        scaffoldBackgroundColor: const Color(0xFF101417),
+        scaffoldBackgroundColor: _appBackground,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: _appBackground,
+          foregroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+        ),
+        navigationBarTheme: NavigationBarThemeData(
+          backgroundColor: _panelColor,
+          indicatorColor: _accentSoft.withValues(alpha: 0.16),
+          labelTextStyle: WidgetStateProperty.resolveWith(
+            (states) => TextStyle(
+              color: states.contains(WidgetState.selected)
+                  ? _accentSoft
+                  : _mutedText,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          iconTheme: WidgetStateProperty.resolveWith(
+            (states) => IconThemeData(
+              color: states.contains(WidgetState.selected)
+                  ? _accentSoft
+                  : _mutedText,
+            ),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: _fieldFill,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(7),
+            borderSide: const BorderSide(color: _panelBorder),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(7),
+            borderSide: const BorderSide(color: _panelBorder),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(7),
+            borderSide: const BorderSide(color: _accentSoft, width: 1.4),
+          ),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            side: const BorderSide(color: _panelBorder),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+          ),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            elevation: 0,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+          ),
+        ),
       ),
       home: const HomeScreen(),
     );
@@ -1562,7 +1635,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ],
               if (_requestFiles.isEmpty)
                 const Text('No PC files loaded',
-                    style: TextStyle(color: Color(0xFF9AA8AF)))
+                    style: TextStyle(color: _mutedText))
               else
                 for (final file in _requestFiles)
                   ListTile(
@@ -1720,9 +1793,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   children: [
                     Icon(
                       _remoteConnected ? Icons.wifi : Icons.wifi_off,
-                      color: _remoteConnected
-                          ? Colors.greenAccent
-                          : Colors.redAccent,
+                      color: _remoteConnected ? _successSoft : _dangerSoft,
                     ),
                   ],
                 ),
@@ -1737,9 +1808,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   Text(
                     _remoteStatus,
                     style: TextStyle(
-                      color: _remoteConnected
-                          ? Colors.greenAccent
-                          : Colors.grey[500],
+                      color: _remoteConnected ? _successSoft : _mutedText,
                       fontSize: 12,
                     ),
                   ),
@@ -1810,20 +1879,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 width: double.infinity,
                 decoration: BoxDecoration(
                   color: _voiceListening
-                      ? Colors.redAccent.withValues(alpha: 0.9)
-                      : const Color(0xFF1A1D2D),
-                  borderRadius: BorderRadius.circular(10),
+                      ? _dangerSoft.withValues(alpha: 0.9)
+                      : _panelColor,
+                  borderRadius: BorderRadius.circular(7),
                   border: Border.all(
-                    color: _voiceListening
-                        ? Colors.redAccent
-                        : Colors.teal.withValues(alpha: 0.3),
-                    width: 1.5,
+                    color: _voiceListening ? _dangerSoft : _panelBorder,
+                    width: 1.2,
                   ),
                   boxShadow: _voiceListening
                       ? [
                           BoxShadow(
-                            color: Colors.redAccent.withValues(alpha: 0.4),
-                            blurRadius: 15,
+                            color: _dangerSoft.withValues(alpha: 0.24),
+                            blurRadius: 12,
                           )
                         ]
                       : [],
@@ -1834,9 +1901,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     Icon(
                       Icons.mic_rounded,
                       size: 40,
-                      color: _voiceListening
-                          ? Colors.white
-                          : const Color(0xFF64FFDA),
+                      color: _voiceListening ? Colors.white : _accentSoft,
                     ),
                     const SizedBox(width: 12),
                     Text(
@@ -1862,10 +1927,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: Container(
                   width: double.infinity,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF131520),
-                    borderRadius: BorderRadius.circular(10),
+                    color: _fieldFill,
+                    borderRadius: BorderRadius.circular(7),
                     border: Border.all(
-                      color: Colors.teal.withValues(alpha: 0.15),
+                      color: _panelBorder,
+                      width: 1.2,
                     ),
                   ),
                   child: const Center(
@@ -1884,7 +1950,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             color: Colors.white30,
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
-                            letterSpacing: 2,
+                            letterSpacing: 0,
                           ),
                         ),
                         SizedBox(height: 4),
@@ -1921,9 +1987,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 children: [
                   Icon(
                     _remoteConnected ? Icons.wifi : Icons.wifi_off,
-                    color: _remoteConnected
-                        ? Colors.greenAccent
-                        : Colors.redAccent,
+                    color: _remoteConnected ? _successSoft : _dangerSoft,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -1932,9 +1996,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ? 'Remote connected'
                           : 'Waiting for trusted PC',
                       style: TextStyle(
-                        color: _remoteConnected
-                            ? Colors.greenAccent
-                            : const Color(0xFF9AA8AF),
+                        color: _remoteConnected ? _successSoft : _mutedText,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -1950,7 +2012,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               const SizedBox(height: 12),
               Text(
                 _audioStatus,
-                style: const TextStyle(color: Color(0xFF9AA8AF)),
+                style: const TextStyle(color: _mutedText),
               ),
               const SizedBox(height: 14),
               SizedBox(
@@ -2032,17 +2094,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return InputDecoration(
       suffixIcon: suffixIcon,
       labelText: label,
-      labelStyle: const TextStyle(color: Colors.grey),
+      labelStyle: const TextStyle(color: _mutedText),
       filled: true,
-      fillColor: const Color(0xFF1A1D2D),
+      fillColor: _fieldFill,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide.none,
+        borderRadius: BorderRadius.circular(7),
+        borderSide: const BorderSide(color: _panelBorder),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(7),
+        borderSide: const BorderSide(color: _panelBorder),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFF64FFDA), width: 1.5),
+        borderRadius: BorderRadius.circular(7),
+        borderSide: const BorderSide(color: _accentSoft, width: 1.4),
       ),
     );
   }
@@ -2061,20 +2127,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           }),
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.all(4),
-            backgroundColor: const Color(0xFF1A1D2D),
+            backgroundColor: _panelColor,
             foregroundColor: Colors.white,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(7),
             ),
-            side: BorderSide(
-              color: Colors.teal.withValues(alpha: 0.3),
-            ),
-            elevation: 2,
+            side: const BorderSide(color: _panelBorder),
+            elevation: 0,
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 22, color: const Color(0xFF64FFDA)),
+              Icon(icon, size: 22, color: _accentSoft),
               const SizedBox(height: 2),
               Text(
                 label,
@@ -2173,9 +2237,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       _mirrorConnected
                           ? Icons.screenshot_monitor_rounded
                           : Icons.sync_problem_rounded,
-                      color: _mirrorConnected
-                          ? const Color(0xFF65D6A6)
-                          : const Color(0xFFFCA5A5),
+                      color: _mirrorConnected ? _successSoft : _dangerSoft,
                       size: 18,
                     ),
                     const SizedBox(width: 8),
@@ -2317,18 +2379,18 @@ class _FileTransferIndicator extends StatelessWidget {
     final isError = status.toLowerCase().contains('failed') ||
         status.toLowerCase().contains('cancelled');
     final color = isError
-        ? const Color(0xFFFCA5A5)
+        ? _dangerSoft
         : active
-            ? const Color(0xFF64FFDA)
-            : const Color(0xFF9FE6B8);
+            ? _accentSoft
+            : _successSoft;
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF121B1D),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
+        color: _fieldFill,
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: color.withValues(alpha: 0.5), width: 1.2),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2406,7 +2468,12 @@ class _MediaControlButton extends StatelessWidget {
       ),
       style: FilledButton.styleFrom(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        backgroundColor: _fieldFill,
+        foregroundColor: _accentSoft,
+        disabledBackgroundColor: _fieldFill.withValues(alpha: 0.72),
+        disabledForegroundColor: _mutedText,
+        side: const BorderSide(color: _panelBorder),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
       ),
     );
   }
@@ -2459,12 +2526,11 @@ class _HeroPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        color: const Color(0xFF151B20),
-        border: Border.all(color: const Color(0xFF253139)),
+        borderRadius: BorderRadius.circular(7),
+        color: _panelColor,
+        border: Border.all(color: _panelBorder, width: 1.2),
       ),
       padding: const EdgeInsets.all(18),
       child: Column(
@@ -2476,10 +2542,10 @@ class _HeroPanel extends StatelessWidget {
                 height: 44,
                 width: 44,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  color: colors.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(7),
+                  color: _accentSoft.withValues(alpha: 0.12),
                 ),
-                child: Icon(Icons.devices_rounded, color: colors.primary),
+                child: const Icon(Icons.devices_rounded, color: _accentSoft),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -2494,14 +2560,17 @@ class _HeroPanel extends StatelessWidget {
                           ?.copyWith(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 4),
-                    Text(pcName.isEmpty ? 'Local Wi-Fi connection' : pcName),
+                    Text(
+                      pcName.isEmpty ? 'Local Wi-Fi connection' : pcName,
+                      style: const TextStyle(color: _mutedText),
+                    ),
                   ],
                 ),
               ),
             ],
           ),
           const SizedBox(height: 14),
-          Text(status),
+          Text(status, style: const TextStyle(color: _mutedText)),
         ],
       ),
     );
@@ -2518,22 +2587,24 @@ class _SectionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        color: const Color(0xFF151B20),
-        border: Border.all(color: const Color(0xFF253139)),
+        borderRadius: BorderRadius.circular(7),
+        color: _panelColor,
+        border: Border.all(color: _panelBorder, width: 1.2),
       ),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: Theme.of(context)
-                .textTheme
-                .titleSmall
-                ?.copyWith(fontWeight: FontWeight.w700),
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
+          const Divider(height: 1, color: _panelBorder),
+          const SizedBox(height: 13),
           child,
         ],
       ),
@@ -2549,11 +2620,12 @@ class _StateChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = active ? const Color(0xFF65D6A6) : const Color(0xFFF2B56B);
+    final color = active ? _successSoft : _warningSoft;
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.7)),
+        color: color.withValues(alpha: 0.1),
+        border: Border.all(color: color.withValues(alpha: 0.72)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: Text(
@@ -2580,8 +2652,7 @@ class _InfoRow extends StatelessWidget {
         children: [
           SizedBox(
             width: 104,
-            child:
-                Text(label, style: const TextStyle(color: Color(0xFF9AA8AF))),
+            child: Text(label, style: const TextStyle(color: _mutedText)),
           ),
           Expanded(child: SelectableText(value.isEmpty ? '-' : value)),
         ],
