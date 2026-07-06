@@ -55,6 +55,12 @@ def execute_command(cmd):
     elif action_type == "MOUSE_CLICK":
         require_pyautogui()
         pyautogui.click(button=cmd.get("button", "left"))
+    elif action_type == "MOUSE_DRAG":
+        require_pyautogui()
+        if cmd.get("action") == "down":
+            pyautogui.mouseDown(button="left")
+        elif cmd.get("action") == "up":
+            pyautogui.mouseUp(button="left")
     elif action_type == "TYPE_TEXT":
         require_pyautogui()
         text = str(cmd.get("text", ""))

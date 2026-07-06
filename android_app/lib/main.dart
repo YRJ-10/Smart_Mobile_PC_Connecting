@@ -92,6 +92,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   double _accumulatedDx = 0;
   double _accumulatedDy = 0;
   DateTime _lastMoveTime = DateTime.now();
+  DateTime _lastTwoFingerNavTime = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _trackpadDragging = false;
+  Timer? _dragStartTimer;
+  int? _mirrorPrimaryPointer;
   static const int _audioPort = 8081;
   bool _autoConnectInFlight = false;
   DateTime? _lastAutoConnectAt;
@@ -122,6 +126,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _prefs.invokeMethod('stopAudioReceiver');
     _controlSocket?.destroy();
     _screenSocket?.destroy();
+    _dragStartTimer?.cancel();
     _baseUrlController.dispose();
     _pairingTokenController.dispose();
     _urlController.dispose();
@@ -706,9 +711,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (_pointerPositions.length == 1) {
       _pointerDownTime = DateTime.now();
       _peakPointerCount = 1;
+      _dragStartTimer?.cancel();
+      _dragStartTimer = Timer(const Duration(milliseconds: 450), () {
+        if (_pointerPositions.length == 1 && !_trackpadDragging) {
+          _trackpadDragging = true;
+          _sendRemoteCommand({'type': 'MOUSE_DRAG', 'action': 'down'});
+          if (mounted) {
+            setState(() => _remoteStatus = 'Drag active');
+          }
+        }
+      });
     }
     if (_pointerPositions.length > _peakPointerCount) {
       _peakPointerCount = _pointerPositions.length;
+      if (_pointerPositions.length > 1) {
+        _dragStartTimer?.cancel();
+      }
     }
   }
 
@@ -731,6 +749,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _accumulatedDy = 0;
       }
     } else if (_pointerPositions.length >= 2) {
+      _dragStartTimer?.cancel();
       final now = DateTime.now();
       if (now.difference(_lastMoveTime).inMilliseconds >= 16) {
         final dy = event.delta.dy;
@@ -746,6 +765,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final startPos = _pointerStartPositions[event.pointer];
     final endPos = event.localPosition;
     final duration = DateTime.now().difference(_pointerDownTime).inMilliseconds;
+    _dragStartTimer?.cancel();
+
+    if (_trackpadDragging) {
+      _sendRemoteCommand({'type': 'MOUSE_DRAG', 'action': 'up'});
+      _trackpadDragging = false;
+      _pointerPositions.remove(event.pointer);
+      _pointerStartPositions.remove(event.pointer);
+      if (_pointerPositions.isEmpty) {
+        _peakPointerCount = 0;
+        if (mounted) {
+          setState(() => _remoteStatus = 'Remote connected');
+        }
+      }
+      return;
+    }
 
     if (_peakPointerCount == 1 && startPos != null) {
       final dx = endPos.dx - startPos.dx;
@@ -776,7 +810,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       if (dist < 500 && duration < 400) {
         _sendRemoteCommand({'type': 'MOUSE_CLICK', 'button': 'right'});
-      } else if (dist >= 500 && avgDx.abs() > avgDy.abs()) {
+      } else if (_isTwoFingerNavigation(avgDx, avgDy, duration)) {
+        _lastTwoFingerNavTime = DateTime.now();
         _sendRemoteCommand({
           'type': 'SPECIAL_KEY',
           'key': avgDx > 0 ? 'browserback' : 'browserforward',
@@ -789,6 +824,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (_pointerPositions.isEmpty) {
       _peakPointerCount = 0;
     }
+  }
+
+  bool _isTwoFingerNavigation(double dx, double dy, int durationMs) {
+    final now = DateTime.now();
+    if (now.difference(_lastTwoFingerNavTime).inMilliseconds < 850) {
+      return false;
+    }
+    if (durationMs < 120 || durationMs > 900) return false;
+    if (dx.abs() < 90) return false;
+    if (dy.abs() > 45) return false;
+    return dx.abs() > dy.abs() * 2.8;
   }
 
   void _onLiveTextChanged(String value) {
@@ -1113,10 +1159,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     BoxConstraints constraints,
   ) {
     _mirrorActivePointers.add(event.pointer);
-    if (_mirrorActivePointers.length == 1) {
+    if (_mirrorPrimaryPointer == null) {
+      _mirrorPrimaryPointer = event.pointer;
       _sendMirrorTouch('TOUCH_DOWN', event.localPosition, constraints);
     } else if (_mirrorActivePointers.length == 2) {
       _sendMirrorTouchUp();
+      _mirrorPrimaryPointer = null;
     }
   }
 
@@ -1124,7 +1172,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     PointerMoveEvent event,
     BoxConstraints constraints,
   ) {
-    if (_mirrorActivePointers.length != 1) return;
+    if (_mirrorPrimaryPointer != event.pointer ||
+        _mirrorActivePointers.length != 1) {
+      return;
+    }
     final now = DateTime.now();
     if (now.difference(_lastMirrorMoveTime).inMilliseconds < 16) return;
     _sendMirrorTouch('TOUCH_MOVE', event.localPosition, constraints);
@@ -1132,9 +1183,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _handleMirrorPointerUp(PointerEvent event) {
+    final wasPrimary = _mirrorPrimaryPointer == event.pointer;
     _mirrorActivePointers.remove(event.pointer);
-    if (_mirrorActivePointers.isEmpty) {
+    if (wasPrimary) {
       _sendMirrorTouchUp();
+      _mirrorPrimaryPointer = null;
+    }
+    if (_mirrorActivePointers.isEmpty) {
+      _mirrorPrimaryPointer = null;
     }
   }
 

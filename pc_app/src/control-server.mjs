@@ -9,6 +9,7 @@ const CONTROL_PORT = 8080;
 const ALLOWED_COMMANDS = new Set([
   "MOUSE_MOVE",
   "MOUSE_CLICK",
+  "MOUSE_DRAG",
   "TYPE_TEXT",
   "SCROLL",
   "SPECIAL_KEY",
@@ -223,6 +224,10 @@ function validateCommand(command) {
 
   if (command.type === "MOUSE_CLICK" && !["left", "right", "middle"].includes(String(command.button ?? "left"))) {
     throw new Error(`Unsupported mouse button: ${command.button}`);
+  }
+
+  if (command.type === "MOUSE_DRAG" && !["down", "up"].includes(String(command.action ?? ""))) {
+    throw new Error(`Unsupported drag action: ${command.action}`);
   }
 
   if (command.type === "AUDIO_TOGGLE" && command.enabled) {
