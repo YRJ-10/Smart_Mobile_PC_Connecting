@@ -64,6 +64,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String _remoteStatus = 'Remote disconnected';
   String _audioStatus = 'PC audio off';
   String _mirrorStatus = 'Mirror disconnected';
+  String _fileTransferStatus = '';
   String _deviceId = '';
   String _deviceToken = '';
   String _pcId = '';
@@ -77,6 +78,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Uint8List? _screenFrame;
   List<int> _screenBuffer = [];
   bool _screenHandshakeDone = false;
+  bool _fileTransferActive = false;
+  double? _fileTransferProgress;
   late final stt.SpeechToText _speech;
   double _lastBottomInset = 0.0;
   DateTime _lastMirrorMoveTime = DateTime.now();
@@ -157,14 +160,46 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<dynamic> _handleNativeCall(MethodCall call) async {
     if (call.method == 'nativeStatus') {
-      if (mounted) {
-        setState(() =>
-            _status = call.arguments?.toString() ?? 'Native action finished');
-      }
+      _handleNativeStatus(
+          call.arguments?.toString() ?? 'Native action finished');
     } else if (call.method == 'deepLink') {
       await _handleDeepLink(call.arguments?.toString());
     }
     return null;
+  }
+
+  void _handleNativeStatus(String message) {
+    if (!mounted) return;
+
+    final percentMatch = RegExp(r'(\d{1,3})%').firstMatch(message);
+    final progress = percentMatch == null
+        ? null
+        : (int.tryParse(percentMatch.group(1) ?? '') ?? 0).clamp(0, 100) / 100;
+    final lowerMessage = message.toLowerCase();
+    final isFileMessage = lowerMessage.contains('file') ||
+        lowerMessage.contains('upload') ||
+        lowerMessage.contains('selected');
+    final isUploading = lowerMessage.startsWith('uploading') ||
+        lowerMessage.startsWith('choose file');
+    final isFailedOrCancelled = lowerMessage.contains('failed') ||
+        lowerMessage.contains('cancelled') ||
+        lowerMessage.contains('no file selected');
+    final isDone = lowerMessage.startsWith('uploaded') ||
+        lowerMessage.contains('sent to pc');
+
+    setState(() {
+      _status = message;
+      if (isFileMessage) {
+        _fileTransferStatus = message;
+        _fileTransferActive = isUploading && !isFailedOrCancelled && !isDone;
+        _fileTransferProgress = progress;
+        if (isDone) {
+          _fileTransferProgress = 1;
+        } else if (isFailedOrCancelled) {
+          _fileTransferProgress = null;
+        }
+      }
+    });
   }
 
   Future<void> _bootstrap() async {
@@ -524,7 +559,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() => _status = 'Trust this phone first');
       return;
     }
-    setState(() => _status = 'Choose file(s) to send');
+    setState(() {
+      _status = 'Choose file(s) to send';
+      _fileTransferStatus = 'Choose file(s) to send';
+      _fileTransferActive = true;
+      _fileTransferProgress = null;
+    });
     await _prefs.invokeMethod('pickAndUploadFiles', {
       'baseUrl': _normalizedBaseUrl(),
       'deviceId': _deviceId,
@@ -768,13 +808,49 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     final added = value.substring(commonLen);
     if (added.isNotEmpty) {
-      _sendRemoteCommand({
-        'type': 'TYPE_TEXT',
-        'text': added,
-      });
+      if (_needsClipboardPaste(added)) {
+        unawaited(_pasteTextThroughPcClipboard(added));
+      } else {
+        _sendRemoteCommand({
+          'type': 'TYPE_TEXT',
+          'text': added,
+        });
+      }
     }
 
     _lastLiveText = value;
+  }
+
+  bool _needsClipboardPaste(String text) {
+    return text.runes.any((rune) => rune > 0x7E);
+  }
+
+  Future<void> _pasteTextThroughPcClipboard(String text) async {
+    if (!_isTrusted || !_remoteConnected) {
+      if (mounted) {
+        setState(() => _remoteStatus = 'Connect remote first');
+      }
+      return;
+    }
+
+    try {
+      await _postJson('/api/intent', {
+        'type': 'clipboard',
+        'source': 'android',
+        'payload': {'text': text},
+      });
+      _sendRemoteCommand({
+        'type': 'SPECIAL_KEY',
+        'key': 'paste',
+      });
+      if (mounted) {
+        setState(() => _remoteStatus = 'Unicode text pasted');
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _remoteStatus = 'Unicode paste failed: $error');
+      }
+    }
   }
 
   Future<void> _startVoiceUi() async {
@@ -1161,6 +1237,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String _validQuickAction(String? value) {
     const ids = {
       'send_file',
+      'send_phone_clipboard',
       'pull_clipboard',
       'request_files',
       'open_chrome',
@@ -1357,6 +1434,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   DropdownMenuItem(
                       value: 'send_file', child: Text('Send file')),
                   DropdownMenuItem(
+                      value: 'send_phone_clipboard',
+                      child: Text('Send phone clipboard')),
+                  DropdownMenuItem(
                       value: 'pull_clipboard',
                       child: Text('Pull PC clipboard')),
                   DropdownMenuItem(
@@ -1404,6 +1484,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ],
               ),
               const SizedBox(height: 12),
+              if (_fileTransferStatus.isNotEmpty) ...[
+                _FileTransferIndicator(
+                  status: _fileTransferStatus,
+                  progress: _fileTransferProgress,
+                  active: _fileTransferActive,
+                ),
+                const SizedBox(height: 12),
+              ],
               if (_requestFiles.isEmpty)
                 const Text('No PC files loaded',
                     style: TextStyle(color: Color(0xFF9AA8AF)))
@@ -1439,24 +1527,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 maxLines: 5,
               ),
               const SizedBox(height: 12),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : _readPhoneClipboard,
+                  icon: const Icon(Icons.phone_android_rounded),
+                  label: const Text('Read Phone'),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
                 children: [
-                  OutlinedButton.icon(
-                    onPressed: _busy ? null : _readPhoneClipboard,
-                    icon: const Icon(Icons.phone_android_rounded),
-                    label: const Text('Read Phone'),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _busy || !_isTrusted ? null : _sendClipboard,
+                      icon: const Icon(Icons.send_rounded),
+                      label: const Text('Send'),
+                    ),
                   ),
-                  FilledButton.icon(
-                    onPressed: _busy || !_isTrusted ? null : _sendClipboard,
-                    icon: const Icon(Icons.send_rounded),
-                    label: const Text('Send to PC'),
-                  ),
-                  FilledButton.icon(
-                    onPressed: _busy || !_isTrusted ? null : _pullPcClipboard,
-                    icon: const Icon(Icons.download_rounded),
-                    label: const Text('Pull from PC'),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _busy || !_isTrusted ? null : _pullPcClipboard,
+                      icon: const Icon(Icons.download_rounded),
+                      label: const Text('Pull'),
+                    ),
                   ),
                 ],
               ),
@@ -2028,6 +2123,78 @@ class _PcRequestFile {
     return _PcRequestFile(
       name: json['name']?.toString() ?? 'file',
       bytes: int.tryParse(json['bytes']?.toString() ?? '') ?? 0,
+    );
+  }
+}
+
+class _FileTransferIndicator extends StatelessWidget {
+  const _FileTransferIndicator({
+    required this.status,
+    required this.progress,
+    required this.active,
+  });
+
+  final String status;
+  final double? progress;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final isError = status.toLowerCase().contains('failed') ||
+        status.toLowerCase().contains('cancelled');
+    final color = isError
+        ? const Color(0xFFFCA5A5)
+        : active
+            ? const Color(0xFF64FFDA)
+            : const Color(0xFF9FE6B8);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF121B1D),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isError
+                    ? Icons.error_outline_rounded
+                    : active
+                        ? Icons.cloud_upload_rounded
+                        : Icons.check_circle_outline_rounded,
+                color: color,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  status,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (active || progress != null) ...[
+            const SizedBox(height: 10),
+            LinearProgressIndicator(
+              value: progress,
+              minHeight: 5,
+              backgroundColor: Colors.white10,
+              color: color,
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

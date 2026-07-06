@@ -46,6 +46,7 @@ class NfcLaunchActivity : Activity() {
     private fun runSelectedAction() {
         when (quickAction()) {
             QUICK_SEND_FILE -> openFilePicker()
+            QUICK_SEND_PHONE_CLIPBOARD -> processQuickAction("Sending clipboard") { sendPhoneClipboard() }
             QUICK_PULL_CLIPBOARD -> processQuickAction("Pulling clipboard") { pullPcClipboard() }
             QUICK_OPEN_CHROME -> processQuickAction("Opening Chrome") { sendCommand("open_chrome") }
             QUICK_LOCK_PC -> processQuickAction("Locking PC") { sendCommand("lock_pc") }
@@ -225,6 +226,30 @@ class NfcLaunchActivity : Activity() {
         }
     }
 
+    private fun sendPhoneClipboard(): TapResult {
+        val config = connectionConfig()
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val text = clipboard.primaryClip
+            ?.takeIf { it.itemCount > 0 }
+            ?.getItemAt(0)
+            ?.coerceToText(this)
+            ?.toString()
+            .orEmpty()
+
+        val body = JSONObject()
+            .put("type", "clipboard")
+            .put("source", "nfc")
+            .put("payload", JSONObject().put("text", text))
+
+        postIntent(config.baseUrl, config.deviceId, config.deviceToken, body)
+
+        return if (text.isEmpty()) {
+            TapResult("Clipboard sent", "Phone clipboard is empty.")
+        } else {
+            TapResult("Clipboard sent", "Phone clipboard sent to PC.")
+        }
+    }
+
     private fun uploadFiles(uris: List<Uri>): TapResult {
         val prefs = getSharedPreferences(PREF_NAME, MODE_PRIVATE)
         val baseUrl = prefs.getString("baseUrl", "")?.trim().orEmpty().trimEnd('/')
@@ -343,6 +368,7 @@ class NfcLaunchActivity : Activity() {
         private const val PREF_NAME = "smart_mpc"
         private const val DEFAULT_DEEP_LINK = "smartmpc://tap"
         private const val QUICK_SEND_FILE = "send_file"
+        private const val QUICK_SEND_PHONE_CLIPBOARD = "send_phone_clipboard"
         private const val QUICK_PULL_CLIPBOARD = "pull_clipboard"
         private const val QUICK_REQUEST_FILES = "request_files"
         private const val QUICK_OPEN_CHROME = "open_chrome"
