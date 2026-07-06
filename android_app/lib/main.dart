@@ -89,6 +89,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   double _accumulatedDy = 0;
   DateTime _lastMoveTime = DateTime.now();
   static const int _audioPort = 8081;
+  bool _autoConnectInFlight = false;
+  DateTime? _lastAutoConnectAt;
   List<_DiscoveredPc> _discoveredPcs = const [];
   List<_PcRequestFile> _requestFiles = const [];
 
@@ -138,6 +140,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _lastBottomInset = bottomInset;
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_autoConnectToTrustedPc());
+    }
+  }
+
   Future<void> _requestMicrophonePermission() async {
     final status = await Permission.microphone.status;
     if (!status.isGranted) {
@@ -162,6 +172,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _ensureDeviceId();
     final link = await _prefs.invokeMethod<String>('consumeInitialDeepLink');
     await _handleDeepLink(link);
+    unawaited(_autoConnectToTrustedPc(forceDiscovery: true));
   }
 
   Future<void> _handleDeepLink(String? link) async {
@@ -213,6 +224,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _clearTrust() async {
     await _run('Clearing trust', () async {
+      _disconnectRemote();
       setState(() {
         _deviceToken = '';
         _pcId = '';
@@ -247,28 +259,42 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _discoverPcs() async {
     await _run('Searching local network', () async {
-      final socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
-      socket.broadcastEnabled = true;
+      final pcs = await _scanForPcs();
+      setState(() => _discoveredPcs = pcs);
 
-      final results = <String, _DiscoveredPc>{};
-      late StreamSubscription<RawSocketEvent> subscription;
-      subscription = socket.listen((event) {
-        if (event != RawSocketEvent.read) return;
-        Datagram? datagram;
-        while ((datagram = socket.receive()) != null) {
-          final discovered = _DiscoveredPc.tryParse(datagram!);
-          if (discovered != null) {
-            final previous = results[discovered.host];
-            if (previous == null ||
-                previous.pcId.isEmpty && discovered.pcId.isNotEmpty ||
-                previous.name == previous.host &&
-                    discovered.name != discovered.host) {
-              results[discovered.host] = discovered;
-            }
+      if (pcs.isNotEmpty) {
+        _applyDiscoveredPc(_bestDiscoveredPc(pcs) ?? pcs.first);
+        await _saveConfig();
+      }
+
+      return pcs.isEmpty ? 'No PC found' : 'Found ${pcs.length} PC server(s)';
+    });
+  }
+
+  Future<List<_DiscoveredPc>> _scanForPcs() async {
+    final socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+    socket.broadcastEnabled = true;
+
+    final results = <String, _DiscoveredPc>{};
+    late StreamSubscription<RawSocketEvent> subscription;
+    subscription = socket.listen((event) {
+      if (event != RawSocketEvent.read) return;
+      Datagram? datagram;
+      while ((datagram = socket.receive()) != null) {
+        final discovered = _DiscoveredPc.tryParse(datagram!);
+        if (discovered != null) {
+          final previous = results[discovered.host];
+          if (previous == null ||
+              previous.pcId.isEmpty && discovered.pcId.isNotEmpty ||
+              previous.name == previous.host &&
+                  discovered.name != discovered.host) {
+            results[discovered.host] = discovered;
           }
         }
-      });
+      }
+    });
 
+    try {
       final targets = await _discoveryTargets();
       for (var round = 0; round < 4; round += 1) {
         for (final target in targets) {
@@ -283,20 +309,101 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
 
       await Future<void>.delayed(const Duration(seconds: 1));
-      await subscription.cancel();
-      socket.close();
-
       final pcs = results.values.toList()
         ..sort((a, b) => a.name.compareTo(b.name));
-      setState(() => _discoveredPcs = pcs);
+      return pcs;
+    } finally {
+      await subscription.cancel();
+      socket.close();
+    }
+  }
 
-      if (pcs.isNotEmpty) {
-        _applyDiscoveredPc(pcs.first);
-        await _saveConfig();
+  Future<void> _autoConnectToTrustedPc({bool forceDiscovery = false}) async {
+    if (!_isTrusted || _autoConnectInFlight) return;
+
+    final now = DateTime.now();
+    final lastAutoConnectAt = _lastAutoConnectAt;
+    if (!forceDiscovery &&
+        lastAutoConnectAt != null &&
+        now.difference(lastAutoConnectAt) < const Duration(seconds: 8)) {
+      return;
+    }
+
+    _autoConnectInFlight = true;
+    _lastAutoConnectAt = now;
+
+    try {
+      if (mounted) {
+        setState(() => _status = 'Finding trusted PC');
       }
 
-      return pcs.isEmpty ? 'No PC found' : 'Found ${pcs.length} PC server(s)';
-    });
+      var addressChanged = false;
+      try {
+        final pcs = await _scanForPcs();
+        if (!mounted) return;
+
+        setState(() => _discoveredPcs = pcs);
+        final pc = _bestDiscoveredPc(pcs);
+        if (pc != null) {
+          final previousBaseUrl = _normalizedBaseUrl();
+          setState(() => _applyDiscoveredPc(pc));
+          addressChanged = previousBaseUrl != _normalizedBaseUrl();
+          if (addressChanged) {
+            await _saveConfig();
+          }
+        }
+      } catch (error) {
+        if (mounted) {
+          setState(() => _status = 'Auto discovery unavailable');
+        }
+      }
+
+      if (addressChanged && _remoteConnected) {
+        _controlSocket?.destroy();
+        _controlSocket = null;
+        if (mounted) {
+          setState(() {
+            _remoteConnected = false;
+            _remoteStatus = 'Remote address updated';
+          });
+        }
+      }
+
+      if (!_remoteConnected) {
+        await _connectRemote(auto: true);
+      }
+      if (mounted) {
+        setState(() {
+          _status = _remoteConnected
+              ? 'Trusted PC connected'
+              : 'Trusted PC not reachable';
+        });
+      }
+    } finally {
+      _autoConnectInFlight = false;
+    }
+  }
+
+  _DiscoveredPc? _bestDiscoveredPc(List<_DiscoveredPc> pcs) {
+    if (pcs.isEmpty) return null;
+
+    if (_pcId.isNotEmpty) {
+      for (final pc in pcs) {
+        if (pc.pcId == _pcId) return pc;
+      }
+    }
+
+    final currentHost = Uri.tryParse(_normalizedBaseUrl())?.host ?? '';
+    if (currentHost.isNotEmpty) {
+      for (final pc in pcs) {
+        if (pc.host == currentHost ||
+            Uri.tryParse(pc.baseUrl)?.host == currentHost) {
+          return pc;
+        }
+      }
+    }
+
+    return pcs.first;
   }
 
   void _applyDiscoveredPc(_DiscoveredPc pc) {
@@ -454,7 +561,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
-  Future<void> _connectRemote() async {
+  Future<void> _connectRemote({bool auto = false}) async {
+    if (_remoteConnected && _controlSocket != null) return;
+
     if (!_isTrusted) {
       setState(() => _remoteStatus = 'Trust this phone first');
       return;
@@ -467,7 +576,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return;
     }
 
-    setState(() => _remoteStatus = 'Connecting remote');
+    setState(() =>
+        _remoteStatus = auto ? 'Auto connecting remote' : 'Connecting remote');
     try {
       final socket =
           await Socket.connect(host, 8080, timeout: const Duration(seconds: 5));
@@ -503,11 +613,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() {
         _remoteConnected = true;
         _remoteStatus = 'Remote connected';
+        if (auto) _status = 'Trusted PC connected';
       });
     } catch (error) {
       setState(() {
         _remoteConnected = false;
-        _remoteStatus = 'Remote connect failed: $error';
+        _remoteStatus = auto
+            ? 'Auto remote connect pending'
+            : 'Remote connect failed: $error';
       });
     }
   }
@@ -943,6 +1056,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _setTabIndex(int index) async {
     if (index < _actionsTab || index > _connectTab) return;
 
+    if (index == _remoteTab) {
+      unawaited(_autoConnectToTrustedPc());
+    }
+
     if (index == _mirrorTab) {
       await SystemChrome.setPreferredOrientations([
         DeviceOrientation.landscapeRight,
@@ -1108,7 +1225,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _exitMirrorPage() async {
     _mirrorActivePointers.clear();
     _disconnectMirror();
-    await _setTabIndex(_remoteTab);
+    await _setTabIndex(_actionsTab);
   }
 
   Widget _buildConnectPage() {
@@ -1455,80 +1572,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ],
             ),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _baseUrlController,
-                    decoration: _remoteInputDecoration(
-                      'PC IP Address (Auto-Scan)',
-                    ),
-                    keyboardType: TextInputType.url,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0F2F31),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: IconButton(
-                    tooltip: 'Auto-Discover PC',
-                    onPressed: _busy ? null : _discoverPcs,
-                    icon: _busy
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Color(0xFF64FFDA),
-                            ),
-                          )
-                        : const Icon(
-                            Icons.search_rounded,
-                            color: Color(0xFF64FFDA),
-                          ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed:
-                      _remoteConnected ? _disconnectRemote : _connectRemote,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _remoteConnected
-                        ? const Color(0xFF2A1515)
-                        : Colors.teal.shade700,
-                    foregroundColor:
-                        _remoteConnected ? Colors.redAccent : Colors.white,
-                    side: BorderSide(
-                      color: _remoteConnected
-                          ? Colors.redAccent
-                          : const Color(0xFF64FFDA),
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 16,
-                      horizontal: 18,
-                    ),
-                    elevation: 0,
-                  ),
-                  child: Text(
-                    _remoteConnected ? 'Disconnect' : 'Connect',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
             Align(
               alignment: Alignment.centerLeft,
               child: Column(
@@ -1569,7 +1612,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ),
               style: const TextStyle(color: Colors.white),
+              textInputAction: TextInputAction.send,
               onChanged: _onLiveTextChanged,
+              onSubmitted: (_) => _sendRemoteCommand({
+                'type': 'SPECIAL_KEY',
+                'key': 'enter',
+              }),
             ),
             const SizedBox(height: 12),
             SingleChildScrollView(
@@ -1720,10 +1768,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Widget _remoteSpecialKeyButton(String label, IconData icon, String keyId) {
     return Padding(
-      padding: const EdgeInsets.only(right: 12),
+      padding: const EdgeInsets.only(right: 8),
       child: SizedBox(
-        height: 65,
-        width: 100,
+        height: 54,
+        width: 76,
         child: ElevatedButton(
           onPressed: () => _sendRemoteCommand({
             'type': 'SPECIAL_KEY',
@@ -1751,7 +1799,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontWeight: FontWeight.w700,
-                  fontSize: 11,
+                  fontSize: 10,
                 ),
               ),
             ],
