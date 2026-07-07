@@ -1,4 +1,4 @@
-import { createServer } from "node:http";
+import { createServer, request } from "node:http";
 import { randomUUID } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import {
@@ -92,6 +92,47 @@ function runCapture(command, args, options = {}) {
       else resolveRun(stdout);
     });
   });
+}
+
+function postLocalJson(url, timeoutMs = 5000) {
+  return new Promise((resolvePost, reject) => {
+    const req = request(url, { method: "POST", timeout: timeoutMs }, (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => {
+        body += chunk;
+        if (body.length > 1024 * 1024) req.destroy(new Error("Local API response is too large"));
+      });
+      res.on("end", () => {
+        let json = {};
+        try {
+          json = body ? JSON.parse(body) : {};
+        } catch {
+          reject(new Error("Local API returned invalid JSON"));
+          return;
+        }
+
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          reject(new Error(json.error || `Local API failed with HTTP ${res.statusCode}`));
+          return;
+        }
+
+        resolvePost(json);
+      });
+    });
+    req.on("timeout", () => req.destroy(new Error("Local API timed out")));
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+async function switchMonitorProfile(profile) {
+  const profileId = String(profile ?? "").trim();
+  if (!/^[1-6]$/.test(profileId)) throw new Error("Invalid monitor profile");
+
+  const result = await postLocalJson(`http://127.0.0.1:47777/profile/${profileId}`);
+  if (result.ok === false) throw new Error(result.error || "Monitor switcher rejected the profile");
+  return result;
 }
 
 async function openTarget(target) {
@@ -586,6 +627,12 @@ export class SmartMpcServer {
     if (command.type === "open_known_folder" && command.target === "downloads") {
       await openTarget(join(homedir(), "Downloads"));
       return { command_id: id, target: "downloads", result: "opened" };
+    }
+
+    if (command.type === "monitor_profile") {
+      const profile = String(command.profile ?? "");
+      const result = await switchMonitorProfile(profile);
+      return { command_id: id, profile, result: "switched", monitor_switcher: result };
     }
 
     throw new Error(`Unsupported command: ${id}`);

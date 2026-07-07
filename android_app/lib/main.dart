@@ -1756,6 +1756,52 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ],
           ),
         ),
+        const SizedBox(height: 14),
+        _SectionCard(
+          title: 'Monitor Profiles',
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _CommandButton(
+                  label: 'Utama',
+                  icon: Icons.looks_one_rounded,
+                  onTap: () => _sendCommand('monitor_profile_1'),
+                  busy: _busy,
+                  trusted: _isTrusted),
+              _CommandButton(
+                  label: 'Utama + Vertikal',
+                  icon: Icons.looks_two_rounded,
+                  onTap: () => _sendCommand('monitor_profile_2'),
+                  busy: _busy,
+                  trusted: _isTrusted),
+              _CommandButton(
+                  label: 'Utama + Landscape',
+                  icon: Icons.looks_3_rounded,
+                  onTap: () => _sendCommand('monitor_profile_3'),
+                  busy: _busy,
+                  trusted: _isTrusted),
+              _CommandButton(
+                  label: 'Semua',
+                  icon: Icons.looks_4_rounded,
+                  onTap: () => _sendCommand('monitor_profile_4'),
+                  busy: _busy,
+                  trusted: _isTrusted),
+              _CommandButton(
+                  label: 'Hanya Vertikal',
+                  icon: Icons.looks_5_rounded,
+                  onTap: () => _sendCommand('monitor_profile_5'),
+                  busy: _busy,
+                  trusted: _isTrusted),
+              _CommandButton(
+                  label: 'Hanya Landscape',
+                  icon: Icons.looks_6_rounded,
+                  onTap: () => _sendCommand('monitor_profile_6'),
+                  busy: _busy,
+                  trusted: _isTrusted),
+            ],
+          ),
+        ),
       ],
     );
   }

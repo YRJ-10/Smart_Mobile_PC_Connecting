@@ -32,7 +32,13 @@ function defaultAllowedCommands() {
     open_downloads: { type: "open_known_folder", target: "downloads" },
     open_chrome: { type: "pc_action" },
     lock_pc: { type: "pc_action" },
-    sleep_pc: { type: "pc_action" }
+    sleep_pc: { type: "pc_action" },
+    monitor_profile_1: { type: "monitor_profile", profile: "1" },
+    monitor_profile_2: { type: "monitor_profile", profile: "2" },
+    monitor_profile_3: { type: "monitor_profile", profile: "3" },
+    monitor_profile_4: { type: "monitor_profile", profile: "4" },
+    monitor_profile_5: { type: "monitor_profile", profile: "5" },
+    monitor_profile_6: { type: "monitor_profile", profile: "6" }
   };
 }
 
