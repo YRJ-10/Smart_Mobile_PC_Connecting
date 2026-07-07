@@ -25,7 +25,6 @@
         <div class="panel server-panel">
           <div class="panel-header">
             <h2>Connection</h2>
-            <button id="copyTokenButton" type="button">Copy Token</button>
           </div>
           <div class="info-grid">
             <div>
@@ -50,30 +49,41 @@
             </div>
             <div class="wide">
               <span class="label">Pairing Token</span>
-              <code id="pairingToken">-</code>
+              <div class="token-row">
+                <code id="pairingToken">-</code>
+                <button id="copyTokenButton" type="button">Copy</button>
+              </div>
             </div>
           </div>
           <div class="url-list" id="baseUrlList"></div>
         </div>
 
-        <div class="panel folder-panel">
-          <div class="panel-header">
-            <h2>Folders</h2>
+        <div class="side-stack">
+          <div class="panel startup-panel">
+            <div class="panel-header">
+              <h2>Startup</h2>
+            </div>
+            <label class="toggle-row">
+              <input id="startupToggle" type="checkbox">
+              <span>
+                <strong>Run at Windows startup</strong>
+                <small>Start Smart MPC automatically after sign in.</small>
+              </span>
+            </label>
           </div>
-          <label class="toggle-row">
-            <input id="startupToggle" type="checkbox">
-            <span>
-              <strong>Run at Windows startup</strong>
-              <small>Start Smart MPC automatically after sign in.</small>
-            </span>
-          </label>
-          <div class="folder-actions">
-            <button id="openInboxButton" type="button">Open Inbox</button>
-            <button id="openOutboxButton" type="button">Open Outbox</button>
-            <button id="addOutboxFilesButton" type="button">Add Files</button>
+
+          <div class="panel folder-panel">
+            <div class="panel-header">
+              <h2>Folders</h2>
+            </div>
+            <div class="folder-actions">
+              <button id="openInboxButton" type="button">Open Inbox</button>
+              <button id="openOutboxButton" type="button">Open Outbox</button>
+              <button id="addOutboxFilesButton" type="button">Add Files</button>
+            </div>
+            <p>Inbox receives phone uploads. Outbox is where PC files are shared to phone.</p>
+            <div id="outboxFileList" class="mini-list"></div>
           </div>
-          <p>Inbox receives phone uploads. Outbox is where PC files are shared to phone.</p>
-          <div id="outboxFileList" class="mini-list"></div>
         </div>
       </section>
 
