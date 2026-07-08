@@ -787,6 +787,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _controlSocket?.write('${jsonEncode(message)}\n');
   }
 
+  Offset _trackpadDeltaWithAcceleration(double dx, double dy) {
+    final distance = sqrt(dx * dx + dy * dy);
+    const baseSensitivity = 4.35;
+    const accelerationRange = 2.65;
+    final normalized = ((distance - 1.6) / 13.0).clamp(0.0, 1.0).toDouble();
+    final eased = normalized * normalized * (3 - 2 * normalized);
+    final sensitivity = baseSensitivity + accelerationRange * eased;
+    return Offset(dx * sensitivity, dy * sensitivity);
+  }
+
   void _onTrackpadPointerDown(PointerDownEvent event) {
     _pointerPositions[event.pointer] = event.localPosition;
     _pointerStartPositions[event.pointer] = event.localPosition;
@@ -807,11 +817,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _accumulatedDy += event.delta.dy;
       final now = DateTime.now();
       if (now.difference(_lastMoveTime).inMilliseconds >= 16) {
-        const sensitivity = 4.0;
+        final delta = _trackpadDeltaWithAcceleration(
+          _accumulatedDx,
+          _accumulatedDy,
+        );
         _sendRemoteCommand({
           'type': 'MOUSE_MOVE',
-          'dx': _accumulatedDx * sensitivity,
-          'dy': _accumulatedDy * sensitivity,
+          'dx': delta.dx,
+          'dy': delta.dy,
         });
         _lastMoveTime = now;
         _accumulatedDx = 0;
