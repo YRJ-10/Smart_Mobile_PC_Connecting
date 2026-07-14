@@ -1,4 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SmartMpcServer } from "../server.mjs";
@@ -14,6 +15,41 @@ const server = new SmartMpcServer();
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
+
+function startupFolderPath() {
+  const appData = process.env.APPDATA;
+  if (!appData) return "";
+  return join(appData, "Microsoft", "Windows", "Start Menu", "Programs", "Startup");
+}
+
+function startupEntryPath() {
+  const folder = startupFolderPath();
+  return folder ? join(folder, "Smart MPC PC Server.vbs") : "";
+}
+
+function startupTargetPath() {
+  return process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+}
+
+function startupScript(targetPath) {
+  const safeTarget = String(targetPath).replaceAll('"', '""');
+  return [
+    "Set shell = CreateObject(\"WScript.Shell\")",
+    `shell.Run Chr(34) & "${safeTarget}" & Chr(34), 0, False`
+  ].join("\r\n");
+}
+
+function disableLegacyLoginItem() {
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: false,
+      path: process.execPath,
+      args: []
+    });
+  } catch {
+    // Best-effort cleanup for the previous portable-unfriendly startup method.
+  }
+}
 
 function createWindow({ showOnReady = false } = {}) {
   mainWindow = new BrowserWindow({
@@ -67,13 +103,14 @@ function createTray() {
 }
 
 function startupSettings() {
-  const settings = app.getLoginItemSettings({
-    path: process.execPath
-  });
+  const entryPath = startupEntryPath();
+  const targetPath = startupTargetPath();
   return {
     supported: process.platform === "win32",
-    enabled: Boolean(settings.openAtLogin),
-    path: process.execPath
+    enabled: Boolean(entryPath && existsSync(entryPath)),
+    path: targetPath,
+    entry_path: entryPath,
+    method: "startup_folder"
   };
 }
 
@@ -81,11 +118,20 @@ function setStartupEnabled(enabled) {
   if (process.platform !== "win32") {
     return startupSettings();
   }
-  app.setLoginItemSettings({
-    openAtLogin: Boolean(enabled),
-    path: process.execPath,
-    args: []
-  });
+
+  disableLegacyLoginItem();
+
+  const folderPath = startupFolderPath();
+  const entryPath = startupEntryPath();
+  if (!folderPath || !entryPath) return { ...startupSettings(), supported: false };
+
+  if (enabled) {
+    mkdirSync(folderPath, { recursive: true });
+    writeFileSync(entryPath, startupScript(startupTargetPath()), "utf8");
+  } else if (existsSync(entryPath)) {
+    unlinkSync(entryPath);
+  }
+
   return startupSettings();
 }
 
