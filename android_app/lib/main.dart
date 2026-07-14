@@ -1053,6 +1053,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _refreshAudio() async {
+    if (!_remoteConnected || _controlSocket == null) {
+      setState(() => _audioStatus = 'Connect remote first');
+      return;
+    }
+    setState(() => _audioStatus = 'Refreshing PC audio');
+    await _stopAudio();
+    await Future<void>.delayed(const Duration(milliseconds: 180));
+    await _startAudio();
+  }
+
   Future<void> _startAudio() async {
     if (!_remoteConnected || _controlSocket == null) {
       setState(() => _audioStatus = 'Connect remote first');
@@ -1355,6 +1366,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final isRemoteTab = _tabIndex == _remoteTab;
     final isImmersiveTab = isRemoteTab || isMirrorTab;
 
+    final currentPage =
+        isMirrorTab ? pages[_tabIndex] : SafeArea(child: pages[_tabIndex]);
+
     return Scaffold(
       resizeToAvoidBottomInset: !isImmersiveTab,
       backgroundColor: isMirrorTab ? Colors.black : null,
@@ -1374,7 +1388,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ],
             ),
-      body: isMirrorTab ? pages[_tabIndex] : SafeArea(child: pages[_tabIndex]),
+      body: Stack(
+        children: [
+          Positioned.fill(child: currentPage),
+          if (_audioEnabled) _buildGlobalAudioControl(isImmersiveTab),
+        ],
+      ),
       bottomNavigationBar: isImmersiveTab
           ? null
           : NavigationBar(
@@ -1394,6 +1413,99 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     icon: Icon(Icons.lan_rounded), label: 'Connect'),
               ],
             ),
+    );
+  }
+
+  Widget _buildGlobalAudioControl(bool isImmersiveTab) {
+    return Positioned(
+      top: isImmersiveTab ? 12 : 10,
+      right: 12,
+      child: SafeArea(
+        child: Material(
+          color: Colors.transparent,
+          child: PopupMenuButton<String>(
+            tooltip: 'PC audio controls',
+            color: _panelColor,
+            elevation: 10,
+            offset: const Offset(0, 52),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(7),
+              side: const BorderSide(color: _panelBorder, width: 1.2),
+            ),
+            onSelected: (value) {
+              if (value == 'refresh') {
+                unawaited(_refreshAudio());
+              } else if (value == 'stop') {
+                unawaited(_stopAudio());
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem<String>(
+                enabled: false,
+                child: SizedBox(
+                  width: 210,
+                  child: Row(
+                    children: [
+                      const Icon(Icons.graphic_eq_rounded,
+                          color: _successSoft, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _audioStatus,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem<String>(
+                value: 'refresh',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.sync_rounded, color: _accentSoft),
+                  title: Text('Refresh Audio'),
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'stop',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.volume_off_rounded, color: _dangerSoft),
+                  title: Text('Stop PC Audio'),
+                ),
+              ),
+            ],
+            child: Container(
+              height: 46,
+              width: 46,
+              decoration: BoxDecoration(
+                color: _successSoft.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(7),
+                border: Border.all(color: _successSoft, width: 1.2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.24),
+                    blurRadius: 12,
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.graphic_eq_rounded,
+                color: _successSoft,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
