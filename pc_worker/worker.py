@@ -1,5 +1,6 @@
 import json
 import socket
+import struct
 import sys
 import threading
 import time
@@ -27,6 +28,7 @@ else:
 AUDIO_SAMPLE_RATE = 16000
 AUDIO_CHANNELS = 1
 AUDIO_NUMFRAMES = 256
+AUDIO_PACKET_MAGIC = b"SMA1"
 
 audio_thread = None
 audio_stop_event = threading.Event()
@@ -130,7 +132,9 @@ def stop_audio_stream():
 
 def audio_loop(target_host, target_port):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 64 * 1024)
     target = (target_host, target_port)
+    sequence = 0
 
     try:
         default_speaker = sc.default_speaker()
@@ -156,7 +160,9 @@ def audio_loop(target_host, target_port):
                     .tobytes()
                 )
                 if pcm:
-                    sock.sendto(pcm, target)
+                    header = struct.pack(">4sI", AUDIO_PACKET_MAGIC, sequence & 0xFFFFFFFF)
+                    sock.sendto(header + pcm, target)
+                    sequence += 1
     except Exception as exc:
         respond(False, event="audio_error", error=str(exc))
     finally:
