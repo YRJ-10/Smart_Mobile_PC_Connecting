@@ -15,13 +15,10 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.Process
-import android.os.SystemClock
-import android.util.Log
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
 
 class AudioReceiverService : Service() {
     @Volatile private var audioRunning = false
@@ -92,14 +89,6 @@ class AudioReceiverService : Service() {
         audioTrack = track
         track.play()
         val queue = ArrayBlockingQueue<ByteArray>(AUDIO_QUEUE_CAPACITY)
-        val startedAt = SystemClock.elapsedRealtime()
-        val receivedPackets = AtomicLong(0)
-        val playedPackets = AtomicLong(0)
-        val queueDrops = AtomicLong(0)
-        val queueEmpty = AtomicLong(0)
-        val concealedPacketsTotal = AtomicLong(0)
-        val sequenceGaps = AtomicLong(0)
-        val outOfOrderPackets = AtomicLong(0)
 
         audioReceiverThread = Thread {
             Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
@@ -108,25 +97,10 @@ class AudioReceiverService : Service() {
                 audioSocket = socket
                 val buffer = ByteArray(minBuffer * 2)
                 val packet = DatagramPacket(buffer, buffer.size)
-                var expectedSequence: Long? = null
                 while (audioRunning) {
                     socket.receive(packet)
                     val audioPacket = copyAudioPayload(packet) ?: continue
-                    receivedPackets.incrementAndGet()
-                    val sequence = audioPacket.sequence
-                    if (sequence != null) {
-                        val expected = expectedSequence
-                        if (expected != null && sequence != expected) {
-                            if (sequence > expected) {
-                                sequenceGaps.addAndGet(sequence - expected)
-                            } else {
-                                outOfOrderPackets.incrementAndGet()
-                            }
-                        }
-                        expectedSequence = sequence + 1
-                    }
                     if (!queue.offer(audioPacket.pcm)) {
-                        queueDrops.incrementAndGet()
                         queue.poll()
                         queue.offer(audioPacket.pcm)
                     }
@@ -142,37 +116,18 @@ class AudioReceiverService : Service() {
             Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
             var lastPcm: ByteArray? = null
             var concealedPackets = 0
-            var lastStatsAt = SystemClock.elapsedRealtime()
             while (audioRunning) {
                 val pcm = queue.poll(AUDIO_PACKET_MS, TimeUnit.MILLISECONDS)
                 if (pcm == null) {
-                    queueEmpty.incrementAndGet()
                     val fallback = lastPcm
                     if (fallback != null && concealedPackets < MAX_CONCEALED_PACKETS) {
                         writeAudio(track, softenedCopy(fallback), 0, fallback.size)
                         concealedPackets += 1
-                        concealedPacketsTotal.incrementAndGet()
                     }
                 } else {
                     lastPcm = pcm
                     concealedPackets = 0
-                    playedPackets.incrementAndGet()
                     writeAudio(track, pcm, 0, pcm.size)
-                }
-                val now = SystemClock.elapsedRealtime()
-                if (now - lastStatsAt >= AUDIO_STATS_INTERVAL_MS) {
-                    logAudioStats(
-                        startedAt = startedAt,
-                        queueSize = queue.size,
-                        receivedPackets = receivedPackets.get(),
-                        playedPackets = playedPackets.get(),
-                        queueDrops = queueDrops.get(),
-                        queueEmpty = queueEmpty.get(),
-                        concealedPackets = concealedPacketsTotal.get(),
-                        sequenceGaps = sequenceGaps.get(),
-                        outOfOrderPackets = outOfOrderPackets.get(),
-                    )
-                    lastStatsAt = now
                 }
             }
         }.apply {
@@ -182,29 +137,23 @@ class AudioReceiverService : Service() {
         }
     }
 
-    private data class AudioPacket(val pcm: ByteArray, val sequence: Long?)
+    private data class AudioPacket(val pcm: ByteArray)
 
     private fun copyAudioPayload(packet: DatagramPacket): AudioPacket? {
         var offset = packet.offset
         var length = packet.length
         val data = packet.data
-        var sequence: Long? = null
         if (length > AUDIO_HEADER_BYTES &&
             data[offset] == 'S'.code.toByte() &&
             data[offset + 1] == 'M'.code.toByte() &&
             data[offset + 2] == 'A'.code.toByte() &&
             data[offset + 3] == '1'.code.toByte()
         ) {
-            sequence =
-                ((data[offset + 4].toLong() and 0xFF) shl 24) or
-                    ((data[offset + 5].toLong() and 0xFF) shl 16) or
-                    ((data[offset + 6].toLong() and 0xFF) shl 8) or
-                    (data[offset + 7].toLong() and 0xFF)
             offset += AUDIO_HEADER_BYTES
             length -= AUDIO_HEADER_BYTES
         }
         if (length <= 0) return null
-        return AudioPacket(data.copyOfRange(offset, offset + length), sequence)
+        return AudioPacket(data.copyOfRange(offset, offset + length))
     }
 
     private fun softenedCopy(data: ByteArray): ByteArray {
@@ -226,26 +175,6 @@ class AudioReceiverService : Service() {
         } else {
             track.write(data, offset, length)
         }
-    }
-
-    private fun logAudioStats(
-        startedAt: Long,
-        queueSize: Int,
-        receivedPackets: Long,
-        playedPackets: Long,
-        queueDrops: Long,
-        queueEmpty: Long,
-        concealedPackets: Long,
-        sequenceGaps: Long,
-        outOfOrderPackets: Long,
-    ) {
-        val elapsedSeconds = (SystemClock.elapsedRealtime() - startedAt) / 1000
-        Log.i(
-            LOG_TAG,
-            "t=${elapsedSeconds}s recv=$receivedPackets played=$playedPackets " +
-                "queue=$queueSize drops=$queueDrops empty=$queueEmpty " +
-                "conceal=$concealedPackets gaps=$sequenceGaps outOfOrder=$outOfOrderPackets",
-        )
     }
 
     private fun stopAudioReceiver() {
@@ -350,7 +279,5 @@ class AudioReceiverService : Service() {
         private const val AUDIO_QUEUE_CAPACITY = 5
         private const val AUDIO_PACKET_MS = 16L
         private const val MAX_CONCEALED_PACKETS = 5
-        private const val AUDIO_STATS_INTERVAL_MS = 5000L
-        private const val LOG_TAG = "SmartMPCAudio"
     }
 }

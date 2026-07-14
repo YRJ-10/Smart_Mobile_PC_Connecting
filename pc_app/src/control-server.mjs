@@ -24,6 +24,10 @@ const ALLOWED_COMMANDS = new Set([
 const ALLOWED_SPECIAL_KEYS = new Set([
   "alttab",
   "enter",
+  "left",
+  "right",
+  "up",
+  "down",
   "backspace",
   "f5",
   "copy",

@@ -134,6 +134,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _mirrorConnected = false;
   bool _voiceListening = false;
   bool _bootstrapping = true;
+  bool _trustedConnectNoticeShown = false;
   int _tabIndex = 0;
   double _pcVolumeLevel = 50;
   double _committedPcVolumeLevel = 50;
@@ -154,6 +155,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Socket? _controlSocket;
   Socket? _screenSocket;
   Uint8List? _screenFrame;
+  Uint8List? _pendingScreenFrame;
+  Timer? _screenRenderCooldown;
   List<int> _screenBuffer = [];
   bool _screenHandshakeDone = false;
   bool _fileTransferActive = false;
@@ -199,6 +202,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _prefs.invokeMethod('stopAudioReceiver');
     _controlSocket?.destroy();
     _screenSocket?.destroy();
+    _screenRenderCooldown?.cancel();
     _baseUrlController.dispose();
     _pairingTokenController.dispose();
     _urlController.dispose();
@@ -745,6 +749,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _remoteStatus = 'Remote connected';
         if (auto) _status = 'Trusted PC connected';
       });
+      if (auto) _showTrustedConnectedNotice();
     } catch (error) {
       setState(() {
         _remoteConnected = false;
@@ -772,8 +777,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() {
       _remoteConnected = false;
       _audioEnabled = false;
+      _trustedConnectNoticeShown = false;
       _remoteStatus = 'Remote disconnected';
       _audioStatus = 'PC audio off';
+    });
+  }
+
+  void _showTrustedConnectedNotice() {
+    if (!mounted || _trustedConnectNoticeShown) return;
+    _trustedConnectNoticeShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 1400),
+          margin: const EdgeInsets.all(14),
+          content: Row(
+            children: const [
+              Icon(Icons.check_circle_rounded, color: _successSoft, size: 20),
+              SizedBox(width: 10),
+              Text('Trusted PC connected'),
+            ],
+          ),
+        ),
+      );
     });
   }
 
@@ -1166,6 +1194,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _screenSocket = socket;
       _screenBuffer = [];
       _screenFrame = null;
+      _pendingScreenFrame = null;
+      _screenRenderCooldown?.cancel();
+      _screenRenderCooldown = null;
       _screenHandshakeDone = false;
       socket.listen(
         _handleScreenData,
@@ -1202,6 +1233,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _screenSocket = null;
     _screenBuffer = [];
     _screenFrame = null;
+    _pendingScreenFrame = null;
+    _screenRenderCooldown?.cancel();
+    _screenRenderCooldown = null;
     _screenHandshakeDone = false;
     setState(() {
       _mirrorConnected = false;
@@ -1253,12 +1287,33 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _screenBuffer = _screenBuffer.sublist(length + 4);
     }
 
-    if (latestFrame != null && mounted) {
-      setState(() {
-        _screenFrame = latestFrame;
-        _mirrorStatus = 'Mirror receiving';
-      });
+    if (latestFrame != null) {
+      _queueScreenFrame(latestFrame);
     }
+  }
+
+  void _queueScreenFrame(Uint8List frame) {
+    _pendingScreenFrame = frame;
+    if (_screenRenderCooldown?.isActive == true) return;
+    _paintQueuedScreenFrame();
+  }
+
+  void _paintQueuedScreenFrame() {
+    final frame = _pendingScreenFrame;
+    if (frame == null || !mounted || !_mirrorConnected) return;
+
+    _pendingScreenFrame = null;
+    setState(() {
+      _screenFrame = frame;
+      _mirrorStatus = 'Mirror receiving';
+    });
+
+    _screenRenderCooldown = Timer(const Duration(milliseconds: 42), () {
+      _screenRenderCooldown = null;
+      if (_pendingScreenFrame != null) {
+        _paintQueuedScreenFrame();
+      }
+    });
   }
 
   Future<void> _setTabIndex(int index) async {
@@ -1406,6 +1461,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           : AppBar(
               title: const Text('Smart MPC'),
               actions: [
+                if (_audioEnabled) ...[
+                  _buildAudioControlButton(size: 38),
+                  const SizedBox(width: 8),
+                ],
                 Padding(
                   padding: const EdgeInsets.only(right: 12),
                   child: Center(
@@ -1420,7 +1479,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       body: Stack(
         children: [
           Positioned.fill(child: currentPage),
-          if (_audioEnabled) _buildGlobalAudioControl(isImmersiveTab),
+          if (_audioEnabled && isMirrorTab) _buildGlobalAudioControl(),
         ],
       ),
       bottomNavigationBar: isImmersiveTab
@@ -1445,35 +1504,44 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildGlobalAudioControl(bool isImmersiveTab) {
+  Widget _buildGlobalAudioControl() {
     return Positioned(
-      top: isImmersiveTab ? 12 : 10,
+      top: 12,
       right: 12,
       child: SafeArea(
         child: Material(
           color: Colors.transparent,
-          child: InkWell(
+          child: _buildAudioControlButton(size: 46, shadow: true),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAudioControlButton({double size = 42, bool shadow = false}) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(7),
+        onTap: _showAudioControls,
+        child: Container(
+          height: size,
+          width: size,
+          decoration: BoxDecoration(
+            color: _successSoft.withValues(alpha: 0.18),
             borderRadius: BorderRadius.circular(7),
-            onTap: _showAudioControls,
-            child: Container(
-              height: 46,
-              width: 46,
-              decoration: BoxDecoration(
-                color: _successSoft.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(7),
-                border: Border.all(color: _successSoft, width: 1.2),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.24),
-                    blurRadius: 12,
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.graphic_eq_rounded,
-                color: _successSoft,
-              ),
-            ),
+            border: Border.all(color: _successSoft, width: 1.2),
+            boxShadow: shadow
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.24),
+                      blurRadius: 12,
+                    ),
+                  ]
+                : const [],
+          ),
+          child: const Icon(
+            Icons.graphic_eq_rounded,
+            color: _successSoft,
           ),
         ),
       ),
@@ -2007,6 +2075,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   spacing: 8,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
+                    if (_audioEnabled) _buildAudioControlButton(size: 38),
                     Icon(
                       _remoteConnected ? Icons.wifi : Icons.wifi_off,
                       color: _remoteConnected ? _successSoft : _dangerSoft,
@@ -2067,6 +2136,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           width: buttonWidth),
                       _remoteSpecialKeyButton(
                           'Enter', Icons.keyboard_return_rounded, 'enter',
+                          width: buttonWidth),
+                      _remoteSpecialKeyButton(
+                          'Left', Icons.keyboard_arrow_left_rounded, 'left',
+                          width: buttonWidth),
+                      _remoteSpecialKeyButton(
+                          'Right', Icons.keyboard_arrow_right_rounded, 'right',
+                          width: buttonWidth),
+                      _remoteSpecialKeyButton(
+                          'Up', Icons.keyboard_arrow_up_rounded, 'up',
+                          width: buttonWidth),
+                      _remoteSpecialKeyButton(
+                          'Down', Icons.keyboard_arrow_down_rounded, 'down',
                           width: buttonWidth),
                       _remoteSpecialKeyButton(
                           'Bksp', Icons.backspace_rounded, 'backspace',

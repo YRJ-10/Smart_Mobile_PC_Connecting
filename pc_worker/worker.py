@@ -185,6 +185,8 @@ def execute_special_key(key):
         pyautogui.hotkey("alt", "left")
     elif key == "browserforward":
         pyautogui.hotkey("alt", "right")
+    elif key in {"left", "right", "up", "down"}:
+        pyautogui.press(key)
     else:
         pyautogui.press(key)
 

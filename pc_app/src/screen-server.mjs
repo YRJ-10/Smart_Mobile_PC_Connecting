@@ -130,12 +130,49 @@ export class ScreenServer {
     });
 
     this.#streams.set(socket, stream);
+    let pending = Buffer.alloc(0);
+    let latestFrame = null;
+    let sending = false;
+
+    const sendLatest = () => {
+      if (sending || socket.destroyed || !latestFrame) return;
+
+      const frame = latestFrame;
+      latestFrame = null;
+      const header = Buffer.allocUnsafe(4);
+      header.writeUInt32BE(frame.length, 0);
+      sending = true;
+
+      const finish = () => {
+        sending = false;
+        sendLatest();
+      };
+
+      if (socket.write(Buffer.concat([header, frame]))) {
+        setImmediate(finish);
+      } else {
+        socket.once("drain", finish);
+      }
+    };
+
     stream.stdout.on("data", (chunk) => {
       if (socket.destroyed) return;
-      if (!socket.write(chunk)) {
-        stream.stdout.pause();
-        socket.once("drain", () => stream.stdout.resume());
+
+      pending = Buffer.concat([pending, chunk]);
+      while (pending.length >= 4) {
+        const length = pending.readUInt32BE(0);
+        if (length <= 0 || length > 20 * 1024 * 1024) {
+          this.#requestLog.add("screen_frame_error", { error: `invalid length ${length}` });
+          socket.destroy();
+          stream.kill();
+          return;
+        }
+        if (pending.length < length + 4) break;
+        latestFrame = pending.subarray(4, length + 4);
+        pending = pending.subarray(length + 4);
       }
+
+      sendLatest();
     });
     stream.stderr.on("data", (chunk) => {
       this.#requestLog.add("screen_worker_error", { error: chunk.toString("utf8").trim().slice(0, 160) });
