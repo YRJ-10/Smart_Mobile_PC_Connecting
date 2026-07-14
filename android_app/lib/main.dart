@@ -135,6 +135,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _voiceListening = false;
   bool _bootstrapping = true;
   int _tabIndex = 0;
+  double _pcVolumeLevel = 50;
+  double _committedPcVolumeLevel = 50;
   String _status = 'Ready';
   String _bootstrapStatus = 'Preparing Smart MPC';
   String _remoteStatus = 'Remote disconnected';
@@ -1108,6 +1110,33 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() => _audioStatus = 'Media command sent: $action');
   }
 
+  void _previewPcVolume(double value) {
+    setState(() => _pcVolumeLevel = value.clamp(0, 100).toDouble());
+  }
+
+  void _commitPcVolume(double value) {
+    final target = value.clamp(0, 100).toDouble();
+    final diff = target - _committedPcVolumeLevel;
+    final steps = (diff.abs() / 2).round().clamp(0, 50).toInt();
+    if (steps == 0) {
+      setState(() => _pcVolumeLevel = target);
+      return;
+    }
+
+    final action = diff > 0 ? 'volumeup' : 'volumedown';
+    for (var i = 0; i < steps; i += 1) {
+      _sendRemoteCommand({
+        'type': 'MEDIA',
+        'action': action,
+      });
+    }
+    setState(() {
+      _pcVolumeLevel = target;
+      _committedPcVolumeLevel = target;
+      _audioStatus = 'PC volume ${target.round()}%';
+    });
+  }
+
   Future<void> _connectMirror() async {
     if (!_isTrusted) {
       setState(() => _mirrorStatus = 'Trust this phone first');
@@ -1423,67 +1452,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       child: SafeArea(
         child: Material(
           color: Colors.transparent,
-          child: PopupMenuButton<String>(
-            tooltip: 'PC audio controls',
-            color: _panelColor,
-            elevation: 10,
-            offset: const Offset(0, 52),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(7),
-              side: const BorderSide(color: _panelBorder, width: 1.2),
-            ),
-            onSelected: (value) {
-              if (value == 'refresh') {
-                unawaited(_refreshAudio());
-              } else if (value == 'stop') {
-                unawaited(_stopAudio());
-              }
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem<String>(
-                enabled: false,
-                child: SizedBox(
-                  width: 210,
-                  child: Row(
-                    children: [
-                      const Icon(Icons.graphic_eq_rounded,
-                          color: _successSoft, size: 20),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          _audioStatus,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem<String>(
-                value: 'refresh',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.sync_rounded, color: _accentSoft),
-                  title: Text('Refresh Audio'),
-                ),
-              ),
-              const PopupMenuItem<String>(
-                value: 'stop',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.volume_off_rounded, color: _dangerSoft),
-                  title: Text('Stop PC Audio'),
-                ),
-              ),
-            ],
+          child: InkWell(
+            borderRadius: BorderRadius.circular(7),
+            onTap: _showAudioControls,
             child: Container(
               height: 46,
               width: 46,
@@ -1506,6 +1477,88 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ),
       ),
+    );
+  }
+
+  void _showAudioControls() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return SafeArea(
+              child: Container(
+                margin: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _panelColor,
+                  borderRadius: BorderRadius.circular(7),
+                  border: Border.all(color: _panelBorder, width: 1.2),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.graphic_eq_rounded,
+                            color: _successSoft),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _audioStatus,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    _buildVolumeSlider(
+                      compact: true,
+                      onPreview: (value) {
+                        _previewPcVolume(value);
+                        setSheetState(() {});
+                      },
+                      onCommit: _commitPcVolume,
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _remoteConnected
+                                ? () => unawaited(_refreshAudio())
+                                : null,
+                            icon: const Icon(Icons.sync_rounded),
+                            label: const Text('Refresh'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              unawaited(_stopAudio());
+                            },
+                            icon: const Icon(Icons.volume_off_rounded),
+                            label: const Text('Stop'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -2333,31 +2386,64 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ],
               ),
               const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: _MediaControlButton(
-                      label: 'Volume Down',
-                      icon: Icons.volume_down_rounded,
-                      enabled: _remoteConnected,
-                      onTap: () => _sendMediaAction('volumedown'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _MediaControlButton(
-                      label: 'Volume Up',
-                      icon: Icons.volume_up_rounded,
-                      enabled: _remoteConnected,
-                      onTap: () => _sendMediaAction('volumeup'),
-                    ),
-                  ),
-                ],
-              ),
+              _buildVolumeSlider(),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildVolumeSlider({
+    bool compact = false,
+    ValueChanged<double>? onPreview,
+    ValueChanged<double>? onCommit,
+  }) {
+    final enabled = _remoteConnected;
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 10 : 12,
+        vertical: compact ? 10 : 12,
+      ),
+      decoration: BoxDecoration(
+        color: _fieldFill,
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: _panelBorder, width: 1.2),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _pcVolumeLevel <= 0
+                ? Icons.volume_off_rounded
+                : _pcVolumeLevel < 50
+                    ? Icons.volume_down_rounded
+                    : Icons.volume_up_rounded,
+            color: enabled ? _accentSoft : _mutedText,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Slider(
+              min: 0,
+              max: 100,
+              divisions: 50,
+              value: _pcVolumeLevel,
+              onChanged: enabled ? (onPreview ?? _previewPcVolume) : null,
+              onChangeEnd: enabled ? (onCommit ?? _commitPcVolume) : null,
+            ),
+          ),
+          SizedBox(
+            width: 42,
+            child: Text(
+              '${_pcVolumeLevel.round()}%',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: enabled ? Colors.white : _mutedText,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
