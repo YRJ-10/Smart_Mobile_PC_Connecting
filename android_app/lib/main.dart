@@ -170,6 +170,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   double _accumulatedDx = 0;
   double _accumulatedDy = 0;
   DateTime _lastMoveTime = DateTime.now();
+  static const int _trackpadSendIntervalMicros = 8000;
+  static const double _trackpadAccelerationReferenceMicros = 16000;
   DateTime _lastTwoFingerNavTime = DateTime.fromMillisecondsSinceEpoch(0);
   bool _trackpadDragging = false;
   static const int _audioPort = 8081;
@@ -817,8 +819,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _controlSocket?.write('${jsonEncode(message)}\n');
   }
 
-  Offset _trackpadDeltaWithAcceleration(double dx, double dy) {
-    final distance = sqrt(dx * dx + dy * dy);
+  Offset _trackpadDeltaWithAcceleration(
+    double dx,
+    double dy, {
+    double accelerationScale = 1,
+  }) {
+    final referenceDx = dx * accelerationScale;
+    final referenceDy = dy * accelerationScale;
+    final distance = sqrt(
+      referenceDx * referenceDx + referenceDy * referenceDy,
+    );
     const baseSensitivity = 4.35;
     const accelerationRange = 2.65;
     final normalized = ((distance - 1.6) / 13.0).clamp(0.0, 1.0).toDouble();
@@ -846,10 +856,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _accumulatedDx += event.delta.dx;
       _accumulatedDy += event.delta.dy;
       final now = DateTime.now();
-      if (now.difference(_lastMoveTime).inMilliseconds >= 16) {
+      final elapsedMicros = now.difference(_lastMoveTime).inMicroseconds;
+      if (elapsedMicros >= _trackpadSendIntervalMicros) {
+        final accelerationScale =
+            elapsedMicros < _trackpadAccelerationReferenceMicros
+                ? _trackpadAccelerationReferenceMicros / elapsedMicros
+                : 1.0;
         final delta = _trackpadDeltaWithAcceleration(
           _accumulatedDx,
           _accumulatedDy,
+          accelerationScale: accelerationScale,
         );
         _sendRemoteCommand({
           'type': 'MOUSE_MOVE',

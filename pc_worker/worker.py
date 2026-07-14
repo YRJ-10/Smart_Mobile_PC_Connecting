@@ -29,6 +29,7 @@ AUDIO_SAMPLE_RATE = 16000
 AUDIO_CHANNELS = 1
 AUDIO_NUMFRAMES = 256
 AUDIO_PACKET_MAGIC = b"SMA1"
+HIGH_FREQUENCY_COMMANDS = {"MOUSE_MOVE"}
 
 audio_thread = None
 audio_stop_event = threading.Event()
@@ -215,7 +216,8 @@ def main():
         try:
             command = json.loads(line)
             execute_command(command)
-            respond(True, event="command_executed", command=command.get("type"))
+            if command.get("type") not in HIGH_FREQUENCY_COMMANDS:
+                respond(True, event="command_executed", command=command.get("type"))
         except Exception as exc:
             respond(False, error=str(exc))
 

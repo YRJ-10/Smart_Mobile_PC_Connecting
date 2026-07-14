@@ -36,6 +36,8 @@ const ALLOWED_SPECIAL_KEYS = new Set([
   "browserforward"
 ]);
 
+const HIGH_FREQUENCY_COMMANDS = new Set(["MOUSE_MOVE"]);
+
 export class ControlServer {
   #config;
   #requestLog;
@@ -157,6 +159,7 @@ export class ControlServer {
     const normalized = normalizeCommand(command, socket);
     validateCommand(normalized);
     this.#sendToWorker(normalized);
+    if (HIGH_FREQUENCY_COMMANDS.has(normalized.type)) return;
     this.#requestLog.add("remote_command", { command: normalized.type });
     this.#send(socket, { ok: true, event: "command_accepted", command: normalized.type });
   }
