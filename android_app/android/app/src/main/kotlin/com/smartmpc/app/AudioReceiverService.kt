@@ -16,6 +16,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import java.net.DatagramPacket
 import java.net.DatagramSocket
+import java.net.SocketTimeoutException
 
 class AudioReceiverService : Service() {
     @Volatile private var audioRunning = false
@@ -89,12 +90,50 @@ class AudioReceiverService : Service() {
             runCatching {
                 val socket = DatagramSocket(port)
                 audioSocket = socket
-                val buffer = ByteArray(minBuffer * 2)
-                val packet = DatagramPacket(buffer, buffer.size)
+                socket.receiveBufferSize = maxOf(minBuffer * 6, 8192)
+                val receiveBuffer = ByteArray(minBuffer * 2)
+                val latestBuffer = ByteArray(receiveBuffer.size)
+                val packet = DatagramPacket(receiveBuffer, receiveBuffer.size)
+                var staleDropStreak = 0
+                var shortWriteStreak = 0
                 while (audioRunning) {
+                    socket.soTimeout = 0
                     socket.receive(packet)
-                    if (packet.length > 0) {
-                        track.write(packet.data, 0, packet.length)
+                    var latestLength = copyPacket(packet, latestBuffer)
+                    socket.soTimeout = DRAIN_TIMEOUT_MS
+
+                    var drainedPackets = 0
+                    while (audioRunning && drainedPackets < MAX_DRAINED_PACKETS) {
+                        try {
+                            socket.receive(packet)
+                            latestLength = copyPacket(packet, latestBuffer)
+                            drainedPackets += 1
+                        } catch (_: SocketTimeoutException) {
+                            break
+                        }
+                    }
+
+                    staleDropStreak = if (drainedPackets > 0) {
+                        staleDropStreak + drainedPackets
+                    } else {
+                        0
+                    }
+                    if (staleDropStreak >= FLUSH_AFTER_DROPPED_PACKETS) {
+                        flushTrack(track)
+                        staleDropStreak = 0
+                    }
+
+                    if (latestLength > 0) {
+                        val written = writeAudio(track, latestBuffer, latestLength)
+                        shortWriteStreak = if (written <= 0 || written < latestLength / 2) {
+                            shortWriteStreak + 1
+                        } else {
+                            0
+                        }
+                        if (shortWriteStreak >= FLUSH_AFTER_SHORT_WRITES) {
+                            flushTrack(track)
+                            shortWriteStreak = 0
+                        }
                     }
                 }
             }
@@ -103,6 +142,31 @@ class AudioReceiverService : Service() {
             name = "smart-mpc-audio"
             isDaemon = true
             start()
+        }
+    }
+
+    private fun copyPacket(packet: DatagramPacket, target: ByteArray): Int {
+        val length = packet.length.coerceAtMost(target.size)
+        if (length > 0) {
+            System.arraycopy(packet.data, packet.offset, target, 0, length)
+        }
+        return length
+    }
+
+    private fun writeAudio(track: AudioTrack, data: ByteArray, length: Int): Int {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            track.write(data, 0, length, AudioTrack.WRITE_NON_BLOCKING)
+        } else {
+            track.write(data, 0, length)
+        }
+    }
+
+    private fun flushTrack(track: AudioTrack) {
+        try {
+            track.pause()
+            track.flush()
+            track.play()
+        } catch (_: IllegalStateException) {
         }
     }
 
@@ -202,5 +266,9 @@ class AudioReceiverService : Service() {
         private const val NOTIFICATION_ID = 38360
         private const val AUDIO_PORT = 8081
         private const val AUDIO_SAMPLE_RATE = 16000
+        private const val DRAIN_TIMEOUT_MS = 1
+        private const val MAX_DRAINED_PACKETS = 12
+        private const val FLUSH_AFTER_DROPPED_PACKETS = 24
+        private const val FLUSH_AFTER_SHORT_WRITES = 4
     }
 }
