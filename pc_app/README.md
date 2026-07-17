@@ -47,6 +47,12 @@ Endpoint awal:
 - `POST /api/devices/register`
 - `POST /api/session/start`
 - `POST /api/session/stop`
+- `GET /api/media/capabilities`
+- `POST /api/media/sessions`
+- `GET /api/media/sessions/{id}/status`
+- `POST /api/media/sessions/{id}/signals`
+- `GET /api/media/sessions/{id}/signals`
+- `POST /api/media/sessions/{id}/stop`
 - `GET /api/server/state`
 - `POST /api/intent`
 - `POST /api/files`
