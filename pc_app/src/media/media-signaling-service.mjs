@@ -57,6 +57,9 @@ export class MediaSignalingService extends EventEmitter {
 
   createSession(deviceId, request = {}) {
     this.#sweepExpired();
+    if (!this.#workerReady) {
+      throw new MediaSignalingError("WebRTC media worker is unavailable", 503);
+    }
     const owner = requiredText(deviceId, "device_id", 256);
     const engine = String(request.engine ?? "webrtc").trim().toLowerCase();
     if (engine !== "webrtc") throw new MediaSignalingError("Unsupported media engine");
@@ -92,8 +95,19 @@ export class MediaSignalingService extends EventEmitter {
       audio: tracks.audio,
       video: tracks.video
     });
-    this.emit("session-started", summary);
+    this.emit("session-started", { ...summary, device_id: owner });
     return summary;
+  }
+
+  setSessionState(sessionId, state) {
+    const session = this.#session(sessionId);
+    const next = String(state ?? "").trim().toLowerCase();
+    if (!["negotiating", "connected", "disconnected", "failed", "closed"].includes(next)) {
+      throw new MediaSignalingError("Unsupported media session state");
+    }
+    session.state = next;
+    this.#touch(session);
+    return publicSession(session);
   }
 
   status(deviceId, sessionId) {
@@ -218,7 +232,7 @@ export class MediaSignalingService extends EventEmitter {
     session.waiters.clear();
     const summary = publicSession(session);
     this.#requestLog?.add("media_session_stopped", { device: session.device_id, reason });
-    this.emit("session-stopped", { ...summary, reason });
+    this.emit("session-stopped", { ...summary, device_id: session.device_id, reason });
   }
 
   #sweepExpired() {

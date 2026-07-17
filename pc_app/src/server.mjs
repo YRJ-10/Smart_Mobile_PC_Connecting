@@ -27,6 +27,7 @@ import { DiscoveryServer } from "./discovery-server.mjs";
 import { ScreenServer } from "./screen-server.mjs";
 import { RequestLog } from "./request-log.mjs";
 import { MediaSignalingService } from "./media/media-signaling-service.mjs";
+import { MediaSessionManager } from "./media/media-session-manager.mjs";
 import {
   handleMediaSignalingRequest,
   isMediaSignalingRoute
@@ -222,17 +223,23 @@ export class SmartMpcServer {
   #discoveryServer;
   #screenServer;
   #mediaSignaling;
+  #mediaSessionManager;
   #sessions = new Map();
   #server = null;
   #startedAt = null;
 
-  constructor({ config = loadOrCreateConfig(), requestLog = new RequestLog() } = {}) {
+  constructor({ config = loadOrCreateConfig(), requestLog = new RequestLog(), mediaWorker = null } = {}) {
     this.#config = config;
     this.#requestLog = requestLog;
     this.#controlServer = new ControlServer({ config: this.#config, requestLog: this.#requestLog });
     this.#discoveryServer = new DiscoveryServer({ config: this.#config, requestLog: this.#requestLog });
     this.#screenServer = new ScreenServer({ config: this.#config, requestLog: this.#requestLog });
     this.#mediaSignaling = new MediaSignalingService({ requestLog: this.#requestLog });
+    this.#mediaSessionManager = new MediaSessionManager({
+      signaling: this.#mediaSignaling,
+      worker: mediaWorker,
+      requestLog: this.#requestLog
+    });
   }
 
   get config() {
@@ -264,6 +271,7 @@ export class SmartMpcServer {
       discovery: this.#discoveryServer.state(),
       screen: this.#screenServer.state(),
       media: this.#mediaSignaling.state(),
+      media_runtime: this.#mediaSessionManager.state(),
       trusted_devices: Object.entries(this.#config.trusted_devices ?? {}).map(([id, device]) => ({
         id,
         name: device.name,
@@ -321,7 +329,7 @@ export class SmartMpcServer {
     await this.#screenServer
       .stop()
       .catch((error) => this.#requestLog.add("screen_error", { error: error.message }));
-    this.#mediaSignaling.reset();
+    await this.#mediaSessionManager.stopAll();
 
     if (!this.#server) return this.state();
 

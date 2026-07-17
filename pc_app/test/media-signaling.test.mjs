@@ -19,7 +19,7 @@ test("capabilities stay local and do not advertise media before worker readiness
 });
 
 test("a new session replaces the previous session owned by the same device", () => {
-  const signaling = new MediaSignalingService();
+  const signaling = readySignaling();
   const first = signaling.createSession("phone-1", {
     engine: "webrtc",
     tracks: { audio: true }
@@ -38,7 +38,7 @@ test("a new session replaces the previous session owned by the same device", () 
 });
 
 test("client signals are validated, sequenced, and isolated by owner", () => {
-  const signaling = new MediaSignalingService();
+  const signaling = readySignaling();
   const session = signaling.createSession("phone-1", {
     tracks: { audio: true, video: true }
   });
@@ -59,7 +59,7 @@ test("client signals are validated, sequenced, and isolated by owner", () => {
 });
 
 test("server signals wake a pending long poll and preserve sequence", async () => {
-  const signaling = new MediaSignalingService();
+  const signaling = readySignaling();
   const session = signaling.createSession("phone-1", {
     tracks: { audio: true }
   });
@@ -81,7 +81,7 @@ test("server signals wake a pending long poll and preserve sequence", async () =
 });
 
 test("stopping a session resolves pending long polls and removes state", async () => {
-  const signaling = new MediaSignalingService();
+  const signaling = readySignaling();
   const session = signaling.createSession("phone-1", {
     tracks: { video: true }
   });
@@ -105,3 +105,9 @@ test("media route matcher excludes unrelated protected APIs", () => {
   );
   assert.equal(isMediaSignalingRoute("/api/clipboard"), false);
 });
+
+function readySignaling() {
+  const signaling = new MediaSignalingService();
+  signaling.setWorkerReady(true);
+  return signaling;
+}

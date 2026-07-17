@@ -9,7 +9,7 @@ penting, bukan setelah setiap edit kecil.
 - [x] Fase 1 - Kontrak isolasi modul dan batas perubahan source.
 - [x] Fase 2 - Proof of concept WebRTC lokal pada PC dan Android.
 - [x] Fase 3 - Signaling lokal melalui PC Server yang sudah ada.
-- [ ] Fase 4 - Media worker PC yang lazy-start dan process-tree safe.
+- [x] Fase 4 - Media worker PC yang lazy-start dan process-tree safe.
 - [ ] Fase 5 - Foundation peer connection WebRTC di Android.
 - [ ] Fase 6 - Capture system audio PC dan transport Opus 48 kHz.
 - [ ] Fase 7 - Playback audio Android, jitter handling, dan reconnect.
