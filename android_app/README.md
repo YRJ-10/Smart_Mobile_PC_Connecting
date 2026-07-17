@@ -89,3 +89,9 @@ flutter run
 ```
 
 Catatan: Android harus satu Wi-Fi dengan PC. Gunakan IP PC lokal, bukan loopback address.
+
+## WebRTC Migration Foundation
+
+Foundation peer WebRTC berada di `lib/media/` dan belum dihubungkan ke UI atau
+startup aplikasi. Engine legacy tetap menjadi jalur production sampai acceptance
+gate migrasi selesai.

@@ -10,7 +10,7 @@ penting, bukan setelah setiap edit kecil.
 - [x] Fase 2 - Proof of concept WebRTC lokal pada PC dan Android.
 - [x] Fase 3 - Signaling lokal melalui PC Server yang sudah ada.
 - [x] Fase 4 - Media worker PC yang lazy-start dan process-tree safe.
-- [ ] Fase 5 - Foundation peer connection WebRTC di Android.
+- [x] Fase 5 - Foundation peer connection WebRTC di Android.
 - [ ] Fase 6 - Capture system audio PC dan transport Opus 48 kHz.
 - [ ] Fase 7 - Playback audio Android, jitter handling, dan reconnect.
 - [ ] Fase 8 - Foreground media service, MediaSession, notification, dan lock screen.

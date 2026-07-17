@@ -12,7 +12,32 @@ class MediaSignalingException implements Exception {
   String toString() => message;
 }
 
-class MediaSignalingClient {
+abstract interface class MediaSignalingTransport {
+  Future<Map<String, dynamic>> capabilities();
+
+  Future<Map<String, dynamic>> createSession({
+    required bool audio,
+    required bool video,
+  });
+
+  Future<Map<String, dynamic>> status(String sessionId);
+
+  Future<Map<String, dynamic>> sendSignal(
+    String sessionId,
+    Map<String, dynamic> signal,
+  );
+
+  Future<Map<String, dynamic>> pollSignals(
+    String sessionId, {
+    int after = 0,
+    int waitMs = 20000,
+  });
+
+  Future<Map<String, dynamic>> stopSession(String sessionId);
+  void dispose();
+}
+
+class MediaSignalingClient implements MediaSignalingTransport {
   MediaSignalingClient({
     required Uri baseUri,
     required this.deviceId,
@@ -26,10 +51,12 @@ class MediaSignalingClient {
   final String deviceId;
   final String deviceToken;
 
+  @override
   Future<Map<String, dynamic>> capabilities() {
     return _request('GET', '/api/media/capabilities');
   }
 
+  @override
   Future<Map<String, dynamic>> createSession({
     required bool audio,
     required bool video,
@@ -44,10 +71,12 @@ class MediaSignalingClient {
     );
   }
 
+  @override
   Future<Map<String, dynamic>> status(String sessionId) {
     return _request('GET', '/api/media/sessions/$sessionId/status');
   }
 
+  @override
   Future<Map<String, dynamic>> sendSignal(
     String sessionId,
     Map<String, dynamic> signal,
@@ -59,6 +88,7 @@ class MediaSignalingClient {
     );
   }
 
+  @override
   Future<Map<String, dynamic>> pollSignals(
     String sessionId, {
     int after = 0,
@@ -76,10 +106,12 @@ class MediaSignalingClient {
     );
   }
 
+  @override
   Future<Map<String, dynamic>> stopSession(String sessionId) {
     return _request('POST', '/api/media/sessions/$sessionId/stop');
   }
 
+  @override
   void dispose() {
     _httpClient.close(force: true);
   }
