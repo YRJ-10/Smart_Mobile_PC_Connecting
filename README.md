@@ -61,11 +61,12 @@ Migrasi media production:
 - [WebRTC Migration Phase 8 Foreground Media](docs/WEBRTC_MIGRATION_PHASE_8_FOREGROUND_MEDIA.md)
 - [WebRTC Migration Phase 9 PC Screen Video](docs/WEBRTC_MIGRATION_PHASE_9_PC_SCREEN_VIDEO.md)
 - [WebRTC Migration Phase 10 Android Mirror](docs/WEBRTC_MIGRATION_PHASE_10_ANDROID_MIRROR.md)
+- [WebRTC Migration Phase 11 Production Cutover](docs/WEBRTC_MIGRATION_PHASE_11_PRODUCTION_CUTOVER.md)
 - [WebRTC Media Migration Plan](docs/WEBRTC_MIGRATION_PLAN.md)
 
 Struktur modul:
 
-- [android_app](android_app/README.md) - aplikasi Android Flutter, NFC entry, dan native audio receiver.
+- [android_app](android_app/README.md) - aplikasi Android Flutter, NFC entry, remote control, dan media WebRTC.
 - [pc_app](pc_app/README.md) - desktop app PC, Node server utama, pairing, file, clipboard, dan bridge ke worker.
 - [pc_worker](pc_worker/README.md) - worker Python untuk kontrol PC, audio loopback, dan screen capture.
 - [shared_protocol](shared_protocol/README.md) - kontrak endpoint, command, event, channel, dan auth.

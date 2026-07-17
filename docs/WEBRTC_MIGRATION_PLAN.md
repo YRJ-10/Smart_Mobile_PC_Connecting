@@ -16,7 +16,7 @@ penting, bukan setelah setiap edit kecil.
 - [x] Fase 8 - Foreground media service, MediaSession, notification, dan lock screen.
 - [x] Fase 9 - Screen capture PC dengan H.264/VP8 dan adaptive bitrate.
 - [x] Fase 10 - Render mirror Android, fullscreen, lifecycle, dan reconnect.
-- [ ] Fase 11 - Uji holistik, resource audit, cutover, cleanup, dan release.
+- [x] Fase 11 - Uji holistik, resource audit, cutover, cleanup, dan release.
 
 ## Aturan Eksekusi
 

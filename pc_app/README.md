@@ -34,7 +34,9 @@ Catatan:
   Opus 48 kHz.
 - Capture primary display WebRTC tersedia secara lazy pada native resolution,
   maksimum 30 fps, dengan H.264/VP8 dan congestion control bawaan WebRTC.
-- Engine legacy tetap menjadi jalur media aplikasi sampai cutover akhir.
+- UI Android production memakai engine WebRTC. Listener legacy dipertahankan
+  sementara untuk rollback dan compatibility, tetapi tidak dipanggil oleh client
+  production.
 
 ## Fase 2: Server Core
 
@@ -80,8 +82,10 @@ Remote control:
 - Pesan pertama harus auth trusted device.
 - Command remote divalidasi di `src/control-server.mjs`.
 - Eksekusi OS diteruskan ke `pc_worker`.
-- Audio toggle memakai control channel untuk start/stop worker audio stream ke Android.
-- Screen mirror memakai TCP channel `8082`, trusted auth, dan worker screen streamer.
+- Audio toggle legacy memakai control channel untuk worker PCM/UDP compatibility.
+- Screen mirror legacy memakai TCP channel `8082` dan worker screen streamer.
+- Audio dan mirror production memakai signaling HTTP tepercaya serta hidden WebRTC
+  media worker yang berhenti setelah session terakhir.
 - Discovery memakai UDP port `8081` dan merespons request baru maupun legacy.
 
 Runtime files yang dibuat saat server dijalankan:

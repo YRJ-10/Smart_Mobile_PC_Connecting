@@ -90,12 +90,15 @@ flutter run
 
 Catatan: Android harus satu Wi-Fi dengan PC. Gunakan IP PC lokal, bukan loopback address.
 
-## WebRTC Migration Foundation
+## Media WebRTC Production
 
-Foundation peer WebRTC berada di `lib/media/` dan belum dihubungkan ke UI atau
-startup aplikasi. Engine legacy tetap menjadi jalur production sampai acceptance
-gate migrasi selesai.
+Audio dan mirror production memakai modul WebRTC di `lib/media/`:
 
-Foundation audio memakai native WebRTC media playback dan adaptive jitter buffer,
-tanpa buffer PCM buatan aplikasi. Foreground playback dan lock-screen MediaSession
-ditambahkan pada fase migrasi berikutnya.
+- audio system PC dikirim sebagai Opus 48 kHz dan diputar oleh native WebRTC;
+- audio tetap aktif saat layar terkunci melalui foreground media service;
+- notification dan lock screen menyediakan kontrol playback;
+- mirror memakai remote video track WebRTC pada native source resolution;
+- mirror hanya menampilkan layar, tanpa touch injection;
+- peer, track, renderer, dan service dilepas ketika media tidak lagi aktif;
+- receiver PCM/UDP dan TCP/JPEG lama tetap tersedia sebagai compatibility source,
+  tetapi tidak dipanggil oleh UI production.
