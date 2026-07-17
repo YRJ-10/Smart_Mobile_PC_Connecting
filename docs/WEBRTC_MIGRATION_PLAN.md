@@ -6,7 +6,7 @@ penting, bukan setelah setiap edit kecil.
 ## Fase
 
 - [x] Fase 0 - Kunci baseline, fitur, resource contract, dan rollback.
-- [ ] Fase 1 - Kontrak isolasi modul dan batas perubahan source.
+- [x] Fase 1 - Kontrak isolasi modul dan batas perubahan source.
 - [ ] Fase 2 - Proof of concept WebRTC lokal pada PC dan Android.
 - [ ] Fase 3 - Signaling lokal melalui PC Server yang sudah ada.
 - [ ] Fase 4 - Media worker PC yang lazy-start dan process-tree safe.
