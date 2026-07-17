@@ -7,7 +7,7 @@ penting, bukan setelah setiap edit kecil.
 
 - [x] Fase 0 - Kunci baseline, fitur, resource contract, dan rollback.
 - [x] Fase 1 - Kontrak isolasi modul dan batas perubahan source.
-- [ ] Fase 2 - Proof of concept WebRTC lokal pada PC dan Android.
+- [x] Fase 2 - Proof of concept WebRTC lokal pada PC dan Android.
 - [ ] Fase 3 - Signaling lokal melalui PC Server yang sudah ada.
 - [ ] Fase 4 - Media worker PC yang lazy-start dan process-tree safe.
 - [ ] Fase 5 - Foundation peer connection WebRTC di Android.
