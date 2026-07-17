@@ -7,6 +7,7 @@ import 'media_signaling_client.dart';
 import 'media_state.dart';
 import 'webrtc_audio_playback.dart';
 import 'webrtc_peer.dart';
+import 'webrtc_video_renderer.dart';
 
 typedef MediaSignalingFactory = MediaSignalingTransport Function(
   TrustedPcMediaContext context,
@@ -17,12 +18,14 @@ class WebRtcMediaEngine implements MediaEngine {
     MediaSignalingFactory? signalingFactory,
     WebRtcPeerFactory? peerFactory,
     WebRtcAudioPlayback? audioPlayback,
+    WebRtcVideoPlayback? videoPlayback,
     List<Duration>? reconnectDelays,
     this.disconnectGrace = const Duration(milliseconds: 1200),
     this.connectionTimeout = const Duration(seconds: 12),
   })  : _signalingFactory = signalingFactory ?? _defaultSignalingFactory,
         _peerFactory = peerFactory ?? createSmartMpcWebRtcPeer,
         _audioPlayback = audioPlayback ?? FlutterWebRtcAudioPlayback(),
+        _videoPlayback = videoPlayback ?? FlutterWebRtcVideoRenderer(),
         _reconnectDelays = reconnectDelays ??
             const [
               Duration(milliseconds: 250),
@@ -33,6 +36,7 @@ class WebRtcMediaEngine implements MediaEngine {
   final MediaSignalingFactory _signalingFactory;
   final WebRtcPeerFactory _peerFactory;
   final WebRtcAudioPlayback _audioPlayback;
+  final WebRtcVideoPlayback _videoPlayback;
   final List<Duration> _reconnectDelays;
   final Duration disconnectGrace;
   final Duration connectionTimeout;
@@ -60,6 +64,7 @@ class WebRtcMediaEngine implements MediaEngine {
   int _reconnectAttempt = 0;
   WebRtcPeerState _lastPeerState = WebRtcPeerState.fresh;
   MediaStreamTrack? _remoteAudioTrack;
+  MediaStreamTrack? _remoteVideoTrack;
   Timer? _connectionTimer;
   Timer? _disconnectTimer;
   Timer? _reconnectTimer;
@@ -138,12 +143,27 @@ class WebRtcMediaEngine implements MediaEngine {
       _cancelReconnect(resetAttempt: true);
       _audioRequested = false;
       _videoRequested = false;
-      await _stopActive(emitState: true);
-      _signaling?.dispose();
+      Object? firstError;
+      try {
+        await _stopActive(emitState: true);
+      } catch (error) {
+        firstError = error;
+      }
+      try {
+        await _videoPlayback.dispose();
+      } catch (error) {
+        firstError ??= error;
+      }
+      try {
+        _signaling?.dispose();
+      } catch (error) {
+        firstError ??= error;
+      }
       _signaling = null;
       _disposed = true;
       await _remoteTracks.close();
       await _states.close();
+      if (firstError != null) throw firstError;
     });
   }
 
@@ -196,6 +216,7 @@ class WebRtcMediaEngine implements MediaEngine {
       _lastPeerState = WebRtcPeerState.fresh;
       _pendingRemoteCandidates.clear();
       if (audio) await _audioPlayback.prepare();
+      if (video) await _videoPlayback.prepare();
       final peer = await _peerFactory();
       _peer = peer;
       _bindPeer(peer, sessionId, generation);
@@ -287,8 +308,24 @@ class WebRtcMediaEngine implements MediaEngine {
       return;
     }
     if (event.track.kind == 'video' && _sessionVideo) {
-      _videoTrackReady = true;
-      _publishConnectedState();
+      try {
+        await _videoPlayback.attach(event);
+        if (!_isCurrent(sessionId, generation)) {
+          await _videoPlayback.detach(event.track);
+          return;
+        }
+        final previous = _remoteVideoTrack;
+        _remoteVideoTrack = event.track;
+        _videoTrackReady = true;
+        if (previous != null && previous.id != event.track.id) {
+          await _videoPlayback.detach(previous);
+        }
+        _publishConnectedState();
+      } catch (error) {
+        if (_isCurrent(sessionId, generation)) {
+          _scheduleFailure(sessionId, generation, error);
+        }
+      }
     }
   }
 
@@ -505,7 +542,9 @@ class WebRtcMediaEngine implements MediaEngine {
     final peer = _peer;
     final sessionId = _sessionId;
     final remoteAudioTrack = _remoteAudioTrack;
+    final remoteVideoTrack = _remoteVideoTrack;
     final hadAudio = _sessionAudio;
+    final hadVideo = _sessionVideo;
     if (peer == null && sessionId == null) {
       if (emitState) _emitIdle();
       return;
@@ -537,6 +576,7 @@ class WebRtcMediaEngine implements MediaEngine {
     _videoTrackReady = false;
     _lastPeerState = WebRtcPeerState.fresh;
     _remoteAudioTrack = null;
+    _remoteVideoTrack = null;
     _serverSequence = 0;
     _remoteDescriptionSet = false;
     _pendingRemoteCandidates.clear();
@@ -559,10 +599,24 @@ class WebRtcMediaEngine implements MediaEngine {
         firstError ??= error;
       }
     }
+    if (remoteVideoTrack != null) {
+      try {
+        await _videoPlayback.detach(remoteVideoTrack);
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+    if (hadVideo) {
+      try {
+        await _videoPlayback.reset();
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
     try {
       await peer?.close();
     } catch (error) {
-      firstError = error;
+      firstError ??= error;
     }
     if (sessionId != null) {
       try {

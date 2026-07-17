@@ -9,6 +9,7 @@ import 'package:smart_mpc/media/media_state.dart';
 import 'package:smart_mpc/media/webrtc_audio_playback.dart';
 import 'package:smart_mpc/media/webrtc_media_engine.dart';
 import 'package:smart_mpc/media/webrtc_peer.dart';
+import 'package:smart_mpc/media/webrtc_video_renderer.dart';
 
 void main() {
   test('peer lifecycle follows requested tracks and cleans every old session',
@@ -16,9 +17,11 @@ void main() {
     final signaling = FakeSignaling();
     final peers = <FakePeer>[];
     final playback = FakeAudioPlayback();
+    final videoPlayback = FakeVideoPlayback();
     final engine = WebRtcMediaEngine(
       signalingFactory: (_) => signaling,
       audioPlayback: playback,
+      videoPlayback: videoPlayback,
       peerFactory: () async {
         final peer = FakePeer(peers.length + 1);
         peers.add(peer);
@@ -77,9 +80,13 @@ void main() {
       WebRtcMediaKind.audio,
       WebRtcMediaKind.video,
     ]);
+    final videoTrack = FakeMediaStreamTrack('video-track-1', 'video');
+    peers[1].emitTrack(videoTrack);
+    await eventually(() => videoPlayback.attached.contains(videoTrack));
 
     await engine.stopAudio();
     expect(peers[1].closed, isTrue);
+    expect(videoPlayback.detached, contains(videoTrack));
     expect(peers[2].receiveOnly, [WebRtcMediaKind.video]);
 
     await engine.stopVideo();
@@ -91,6 +98,7 @@ void main() {
 
     await engine.dispose();
     expect(signaling.disposed, isTrue);
+    expect(videoPlayback.disposeCalls, 1);
   });
 
   test('unavailable PC capability fails clearly without creating a peer',
@@ -424,6 +432,41 @@ class FakeAudioPlayback implements WebRtcAudioPlayback {
   @override
   Future<void> reset() async {
     resetCalls += 1;
+  }
+}
+
+class FakeVideoPlayback implements WebRtcVideoPlayback {
+  final List<MediaStreamTrack> attached = [];
+  final List<MediaStreamTrack> detached = [];
+  int prepareCalls = 0;
+  int resetCalls = 0;
+  int disposeCalls = 0;
+
+  @override
+  Future<void> prepare() async {
+    prepareCalls += 1;
+  }
+
+  @override
+  Future<void> attach(RTCTrackEvent event) async {
+    attached.add(event.track);
+    event.track.enabled = true;
+  }
+
+  @override
+  Future<void> detach(MediaStreamTrack track) async {
+    detached.add(track);
+    track.enabled = false;
+  }
+
+  @override
+  Future<void> reset() async {
+    resetCalls += 1;
+  }
+
+  @override
+  Future<void> dispose() async {
+    disposeCalls += 1;
   }
 }
 
