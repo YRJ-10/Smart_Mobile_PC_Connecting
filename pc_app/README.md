@@ -30,8 +30,9 @@ Catatan:
 - Runtime data lokal seperti `config.json`, `inbox`, `outbox`, dan logs tidak masuk git.
 - Worker WebRTC berjalan sebagai renderer tersembunyi milik Electron, lazy-start
   saat media session pertama aktif, dan berhenti setelah session terakhir.
-- Capture audio/video WebRTC belum aktif pada fase worker; engine legacy tetap
-  menjadi jalur media aplikasi sampai cutover akhir.
+- Capture system audio WebRTC tersedia secara lazy melalui Windows loopback dan
+  Opus 48 kHz. Capture video WebRTC belum aktif.
+- Engine legacy tetap menjadi jalur media aplikasi sampai cutover akhir.
 
 ## Fase 2: Server Core
 

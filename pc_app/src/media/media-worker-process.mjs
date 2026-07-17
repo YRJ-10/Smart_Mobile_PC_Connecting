@@ -1,7 +1,8 @@
 import { EventEmitter } from "node:events";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
-import { BrowserWindow, ipcMain } from "electron";
+import { BrowserWindow, desktopCapturer, ipcMain, session } from "electron";
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const MEDIA_RENDERER_DIR = join(MODULE_DIR, "..", "..", "renderer", "media-worker");
@@ -18,6 +19,8 @@ export class MediaWorkerProcess extends EventEmitter {
   #resolveStopped = null;
   #stopping = false;
   #ipcAttached = false;
+  #electronSession = null;
+  #audioCaptureState = { active: false, sessions: 0, settings: null };
 
   get available() {
     return true;
@@ -31,7 +34,8 @@ export class MediaWorkerProcess extends EventEmitter {
     return {
       available: this.available,
       running: this.running,
-      sessions: this.#sessions.size
+      sessions: this.#sessions.size,
+      audio: { ...this.#audioCaptureState }
     };
   }
 
@@ -60,6 +64,7 @@ export class MediaWorkerProcess extends EventEmitter {
     if (this.running) return;
 
     this.#attachIpc();
+    const workerSession = this.#ensureElectronSession();
     this.#readyPromise = new Promise((resolve, reject) => {
       this.#resolveReady = resolve;
       this.#rejectReady = reject;
@@ -71,7 +76,8 @@ export class MediaWorkerProcess extends EventEmitter {
         preload,
         contextIsolation: true,
         sandbox: true,
-        backgroundThrottling: false
+        backgroundThrottling: false,
+        session: workerSession
       }
     });
     this.#window = window;
@@ -135,6 +141,33 @@ export class MediaWorkerProcess extends EventEmitter {
     this.#ipcAttached = true;
   }
 
+  #ensureElectronSession() {
+    if (this.#electronSession) return this.#electronSession;
+    const workerSession = session.fromPartition("smart-mpc-media-worker");
+    const allowedUrl = pathToFileURL(join(MEDIA_RENDERER_DIR, "index.html")).href;
+    workerSession.setDisplayMediaRequestHandler(async (request, callback) => {
+      if (!request.audioRequested || request.frame?.url !== allowedUrl) {
+        callback({});
+        return;
+      }
+      try {
+        const sources = await desktopCapturer.getSources({
+          types: ["screen"],
+          thumbnailSize: { width: 0, height: 0 }
+        });
+        if (!sources.length) {
+          callback({});
+          return;
+        }
+        callback({ video: sources[0], audio: "loopback" });
+      } catch {
+        callback({});
+      }
+    });
+    this.#electronSession = workerSession;
+    return workerSession;
+  }
+
   #detachIpc() {
     if (!this.#ipcAttached) return;
     ipcMain.removeListener("smart-mpc-media:ready", this.#onReady);
@@ -164,6 +197,15 @@ export class MediaWorkerProcess extends EventEmitter {
       this.emit("session-state", payload);
       return;
     }
+    if (payload.type === "audio-capture-state") {
+      this.#audioCaptureState = {
+        active: Boolean(payload.state?.active),
+        sessions: Number(payload.state?.sessions ?? 0),
+        settings: payload.state?.settings ?? null
+      };
+      this.emit("audio-capture-state", this.state());
+      return;
+    }
     if (payload.type === "worker-error") {
       this.emit("worker-error", payload);
     }
@@ -188,6 +230,7 @@ export class MediaWorkerProcess extends EventEmitter {
     this.#stopTask = null;
     this.#resolveStopped = null;
     this.#stopping = false;
+    this.#audioCaptureState = { active: false, sessions: 0, settings: null };
   }
 }
 

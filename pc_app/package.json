@@ -7,9 +7,10 @@
   "scripts": {
     "start": "electron .",
     "server": "node src/index.mjs",
-    "check": "node --check src/index.mjs && node --check src/server.mjs && node --check src/control-server.mjs && node --check src/discovery-server.mjs && node --check src/screen-server.mjs && node --check src/python-runtime.mjs && node --check src/config.mjs && node --check src/network.mjs && node --check src/request-log.mjs && node --check src/media/media-signaling-service.mjs && node --check src/media/media-signaling-routes.mjs && node --check src/media/media-session-manager.mjs && node --check src/media/media-worker-process.mjs && node --check src/media/media-worker-probe.mjs && node --check src/media/webrtc-probe.mjs && node --check src/electron/main.mjs && node --check src/electron/preload.cjs && node --check renderer/renderer.js && node --check renderer/media-worker/preload.cjs && node --check renderer/media-worker/worker.js",
+    "check": "node --check src/index.mjs && node --check src/server.mjs && node --check src/control-server.mjs && node --check src/discovery-server.mjs && node --check src/screen-server.mjs && node --check src/python-runtime.mjs && node --check src/config.mjs && node --check src/network.mjs && node --check src/request-log.mjs && node --check src/media/media-signaling-service.mjs && node --check src/media/media-signaling-routes.mjs && node --check src/media/media-session-manager.mjs && node --check src/media/media-worker-process.mjs && node --check src/media/media-worker-probe.mjs && node --check src/media/audio-transport-probe.mjs && node --check src/media/webrtc-probe.mjs && node --check src/electron/main.mjs && node --check src/electron/preload.cjs && node --check renderer/renderer.js && node --check renderer/media-worker/preload.cjs && node --check renderer/media-worker/system-audio-capture.js && node --check renderer/media-worker/worker.js",
     "check:webrtc": "electron src/media/webrtc-probe.mjs",
     "check:media-worker": "electron src/media/media-worker-probe.mjs",
+    "check:audio-transport": "electron src/media/audio-transport-probe.mjs",
     "test:media-signaling": "node --test test/*.test.mjs",
     "build": "electron-builder --win portable dir",
     "build:workers": "powershell.exe -ExecutionPolicy Bypass -File ..\\scripts\\build-pc-workers.ps1"
