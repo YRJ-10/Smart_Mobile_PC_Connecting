@@ -5,6 +5,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'media_engine.dart';
 import 'media_signaling_client.dart';
 import 'media_state.dart';
+import 'webrtc_audio_playback.dart';
 import 'webrtc_peer.dart';
 
 typedef MediaSignalingFactory = MediaSignalingTransport Function(
@@ -15,11 +16,26 @@ class WebRtcMediaEngine implements MediaEngine {
   WebRtcMediaEngine({
     MediaSignalingFactory? signalingFactory,
     WebRtcPeerFactory? peerFactory,
+    WebRtcAudioPlayback? audioPlayback,
+    List<Duration>? reconnectDelays,
+    this.disconnectGrace = const Duration(milliseconds: 1200),
+    this.connectionTimeout = const Duration(seconds: 12),
   })  : _signalingFactory = signalingFactory ?? _defaultSignalingFactory,
-        _peerFactory = peerFactory ?? createSmartMpcWebRtcPeer;
+        _peerFactory = peerFactory ?? createSmartMpcWebRtcPeer,
+        _audioPlayback = audioPlayback ?? FlutterWebRtcAudioPlayback(),
+        _reconnectDelays = reconnectDelays ??
+            const [
+              Duration(milliseconds: 250),
+              Duration(milliseconds: 750),
+              Duration(milliseconds: 1500),
+            ];
 
   final MediaSignalingFactory _signalingFactory;
   final WebRtcPeerFactory _peerFactory;
+  final WebRtcAudioPlayback _audioPlayback;
+  final List<Duration> _reconnectDelays;
+  final Duration disconnectGrace;
+  final Duration connectionTimeout;
   final StreamController<MediaState> _states =
       StreamController<MediaState>.broadcast(sync: true);
   final StreamController<RTCTrackEvent> _remoteTracks =
@@ -35,8 +51,18 @@ class WebRtcMediaEngine implements MediaEngine {
   bool _capabilitiesChecked = false;
   bool _remoteDescriptionSet = false;
   bool _disposed = false;
+  bool _peerConnected = false;
+  bool _audioTrackReady = false;
+  bool _videoTrackReady = false;
   int _serverSequence = 0;
   int _generation = 0;
+  int _reconnectTicket = 0;
+  int _reconnectAttempt = 0;
+  WebRtcPeerState _lastPeerState = WebRtcPeerState.fresh;
+  MediaStreamTrack? _remoteAudioTrack;
+  Timer? _connectionTimer;
+  Timer? _disconnectTimer;
+  Timer? _reconnectTimer;
   Future<void> _serial = Future<void>.value();
   final List<WebRtcIceCandidate> _pendingRemoteCandidates = [];
   MediaState _state = const MediaState();
@@ -69,6 +95,7 @@ class WebRtcMediaEngine implements MediaEngine {
   Future<void> startAudio() {
     return _enqueue(() async {
       _ensureReady();
+      _cancelReconnect(resetAttempt: true);
       _audioRequested = true;
       await _reconcile();
     });
@@ -78,6 +105,7 @@ class WebRtcMediaEngine implements MediaEngine {
   Future<void> stopAudio() {
     return _enqueue(() async {
       _ensureReady();
+      _cancelReconnect(resetAttempt: true);
       _audioRequested = false;
       await _reconcile();
     });
@@ -87,6 +115,7 @@ class WebRtcMediaEngine implements MediaEngine {
   Future<void> startVideo() {
     return _enqueue(() async {
       _ensureReady();
+      _cancelReconnect(resetAttempt: true);
       _videoRequested = true;
       await _reconcile();
     });
@@ -96,6 +125,7 @@ class WebRtcMediaEngine implements MediaEngine {
   Future<void> stopVideo() {
     return _enqueue(() async {
       _ensureReady();
+      _cancelReconnect(resetAttempt: true);
       _videoRequested = false;
       await _reconcile();
     });
@@ -105,6 +135,7 @@ class WebRtcMediaEngine implements MediaEngine {
   Future<void> dispose() {
     return _enqueue(() async {
       if (_disposed) return;
+      _cancelReconnect(resetAttempt: true);
       _audioRequested = false;
       _videoRequested = false;
       await _stopActive(emitState: true);
@@ -159,7 +190,12 @@ class WebRtcMediaEngine implements MediaEngine {
       _sessionVideo = video;
       _serverSequence = 0;
       _remoteDescriptionSet = false;
+      _peerConnected = false;
+      _audioTrackReady = false;
+      _videoTrackReady = false;
+      _lastPeerState = WebRtcPeerState.fresh;
       _pendingRemoteCandidates.clear();
+      if (audio) await _audioPlayback.prepare();
       final peer = await _peerFactory();
       _peer = peer;
       _bindPeer(peer, sessionId, generation);
@@ -184,10 +220,16 @@ class WebRtcMediaEngine implements MediaEngine {
         <String, dynamic>{'kind': 'offer', 'sdp': offer},
       );
       unawaited(_pollSignals(sessionId, generation));
+      _scheduleConnectionTimeout(sessionId, generation);
     } catch (error) {
-      await _stopActive(emitState: false);
-      _emitFailure(error);
-      rethrow;
+      Object failure = error;
+      try {
+        await _stopActive(emitState: false);
+      } catch (cleanupError) {
+        failure = StateError('$error; cleanup failed: $cleanupError');
+      }
+      _emitFailure(failure);
+      throw failure;
     }
   }
 
@@ -212,8 +254,42 @@ class WebRtcMediaEngine implements MediaEngine {
     peer.onTrack = (event) {
       if (_isCurrent(sessionId, generation) && !_remoteTracks.isClosed) {
         _remoteTracks.add(event);
+        unawaited(_handleRemoteTrack(sessionId, generation, event));
       }
     };
+  }
+
+  Future<void> _handleRemoteTrack(
+    String sessionId,
+    int generation,
+    RTCTrackEvent event,
+  ) async {
+    if (!_isCurrent(sessionId, generation)) return;
+    if (event.track.kind == 'audio' && _sessionAudio) {
+      try {
+        await _audioPlayback.attach(event.track);
+        if (!_isCurrent(sessionId, generation)) {
+          await _audioPlayback.detach(event.track);
+          return;
+        }
+        final previous = _remoteAudioTrack;
+        _remoteAudioTrack = event.track;
+        _audioTrackReady = true;
+        if (previous != null && previous.id != event.track.id) {
+          await _audioPlayback.detach(previous);
+        }
+        _publishConnectedState();
+      } catch (error) {
+        if (_isCurrent(sessionId, generation)) {
+          _scheduleFailure(sessionId, generation, error);
+        }
+      }
+      return;
+    }
+    if (event.track.kind == 'video' && _sessionVideo) {
+      _videoTrackReady = true;
+      _publishConnectedState();
+    }
   }
 
   Future<void> _sendLocalSignal(
@@ -306,20 +382,35 @@ class WebRtcMediaEngine implements MediaEngine {
     WebRtcPeerState peerState,
   ) {
     if (!_isCurrent(sessionId, generation)) return;
+    _lastPeerState = peerState;
     if (peerState == WebRtcPeerState.connected) {
-      _emit(
-        _state.copyWith(
-          sessionPhase: MediaSessionPhase.connected,
-          audioPhase: _sessionAudio ? MediaTrackPhase.on : MediaTrackPhase.off,
-          videoPhase: _sessionVideo ? MediaTrackPhase.on : MediaTrackPhase.off,
-          clearError: true,
-        ),
-      );
+      _peerConnected = true;
+      _connectionTimer?.cancel();
+      _connectionTimer = null;
+      _disconnectTimer?.cancel();
+      _disconnectTimer = null;
+      _cancelReconnect(resetAttempt: true);
+      _publishConnectedState();
       return;
     }
-    if (peerState == WebRtcPeerState.disconnected ||
-        peerState == WebRtcPeerState.failed ||
+    if (peerState == WebRtcPeerState.disconnected) {
+      _peerConnected = false;
+      _disconnectTimer?.cancel();
+      _disconnectTimer = Timer(disconnectGrace, () {
+        if (_isCurrent(sessionId, generation) &&
+            _lastPeerState == WebRtcPeerState.disconnected) {
+          _scheduleFailure(
+            sessionId,
+            generation,
+            StateError('WebRTC peer remained disconnected'),
+          );
+        }
+      });
+      return;
+    }
+    if (peerState == WebRtcPeerState.failed ||
         peerState == WebRtcPeerState.closed) {
+      _peerConnected = false;
       _scheduleFailure(
         sessionId,
         generation,
@@ -332,21 +423,100 @@ class WebRtcMediaEngine implements MediaEngine {
     unawaited(
       _enqueue(() async {
         if (!_isCurrent(sessionId, generation)) return;
-        await _stopActive(emitState: false);
-        _emitFailure(error);
+        Object failure = error;
+        try {
+          await _stopActive(emitState: false);
+        } catch (cleanupError) {
+          failure = StateError('$error; cleanup failed: $cleanupError');
+        }
+        _emitFailure(failure);
+        _scheduleReconnect();
       }),
+    );
+  }
+
+  void _scheduleConnectionTimeout(String sessionId, int generation) {
+    _connectionTimer?.cancel();
+    _connectionTimer = Timer(connectionTimeout, () {
+      if (_isCurrent(sessionId, generation) && !_peerConnected) {
+        _scheduleFailure(
+          sessionId,
+          generation,
+          StateError('WebRTC connection timed out'),
+        );
+      }
+    });
+  }
+
+  void _scheduleReconnect() {
+    if (_disposed || !_audioRequested && !_videoRequested) return;
+    if (_reconnectAttempt >= _reconnectDelays.length) return;
+    final delay = _reconnectDelays[_reconnectAttempt++];
+    final ticket = ++_reconnectTicket;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(delay, () {
+      if (_disposed ||
+          ticket != _reconnectTicket ||
+          !_audioRequested && !_videoRequested) {
+        return;
+      }
+      unawaited(
+        _enqueue(() async {
+          if (_disposed ||
+              ticket != _reconnectTicket ||
+              _peer != null ||
+              !_audioRequested && !_videoRequested) {
+            return;
+          }
+          try {
+            await _startActive();
+          } catch (_) {
+            _scheduleReconnect();
+          }
+        }),
+      );
+    });
+  }
+
+  void _cancelReconnect({required bool resetAttempt}) {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _reconnectTicket += 1;
+    if (resetAttempt) _reconnectAttempt = 0;
+  }
+
+  void _publishConnectedState() {
+    if (!_peerConnected) return;
+    _emit(
+      _state.copyWith(
+        sessionPhase: MediaSessionPhase.connected,
+        audioPhase: _sessionAudio
+            ? (_audioTrackReady ? MediaTrackPhase.on : MediaTrackPhase.starting)
+            : MediaTrackPhase.off,
+        videoPhase: _sessionVideo
+            ? (_videoTrackReady ? MediaTrackPhase.on : MediaTrackPhase.starting)
+            : MediaTrackPhase.off,
+        clearError: true,
+      ),
     );
   }
 
   Future<void> _stopActive({required bool emitState}) async {
     final peer = _peer;
     final sessionId = _sessionId;
+    final remoteAudioTrack = _remoteAudioTrack;
+    final hadAudio = _sessionAudio;
     if (peer == null && sessionId == null) {
       if (emitState) _emitIdle();
       return;
     }
 
     ++_generation;
+    _cancelReconnect(resetAttempt: false);
+    _connectionTimer?.cancel();
+    _connectionTimer = null;
+    _disconnectTimer?.cancel();
+    _disconnectTimer = null;
     if (emitState) {
       _emit(
         _state.copyWith(
@@ -362,6 +532,11 @@ class WebRtcMediaEngine implements MediaEngine {
     _sessionId = null;
     _sessionAudio = false;
     _sessionVideo = false;
+    _peerConnected = false;
+    _audioTrackReady = false;
+    _videoTrackReady = false;
+    _lastPeerState = WebRtcPeerState.fresh;
+    _remoteAudioTrack = null;
     _serverSequence = 0;
     _remoteDescriptionSet = false;
     _pendingRemoteCandidates.clear();
@@ -370,6 +545,20 @@ class WebRtcMediaEngine implements MediaEngine {
     peer?.onState = null;
     peer?.onTrack = null;
     Object? firstError;
+    if (remoteAudioTrack != null) {
+      try {
+        await _audioPlayback.detach(remoteAudioTrack);
+      } catch (error) {
+        firstError = error;
+      }
+    }
+    if (hadAudio) {
+      try {
+        await _audioPlayback.reset();
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
     try {
       await peer?.close();
     } catch (error) {

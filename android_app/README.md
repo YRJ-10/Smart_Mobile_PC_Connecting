@@ -95,3 +95,7 @@ Catatan: Android harus satu Wi-Fi dengan PC. Gunakan IP PC lokal, bukan loopback
 Foundation peer WebRTC berada di `lib/media/` dan belum dihubungkan ke UI atau
 startup aplikasi. Engine legacy tetap menjadi jalur production sampai acceptance
 gate migrasi selesai.
+
+Foundation audio memakai native WebRTC media playback dan adaptive jitter buffer,
+tanpa buffer PCM buatan aplikasi. Foreground playback dan lock-screen MediaSession
+ditambahkan pada fase migrasi berikutnya.

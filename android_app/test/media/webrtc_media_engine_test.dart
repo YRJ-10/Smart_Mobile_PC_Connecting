@@ -6,6 +6,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:smart_mpc/media/media_engine.dart';
 import 'package:smart_mpc/media/media_signaling_client.dart';
 import 'package:smart_mpc/media/media_state.dart';
+import 'package:smart_mpc/media/webrtc_audio_playback.dart';
 import 'package:smart_mpc/media/webrtc_media_engine.dart';
 import 'package:smart_mpc/media/webrtc_peer.dart';
 
@@ -14,8 +15,10 @@ void main() {
       () async {
     final signaling = FakeSignaling();
     final peers = <FakePeer>[];
+    final playback = FakeAudioPlayback();
     final engine = WebRtcMediaEngine(
       signalingFactory: (_) => signaling,
+      audioPlayback: playback,
       peerFactory: () async {
         final peer = FakePeer(peers.length + 1);
         peers.add(peer);
@@ -47,6 +50,10 @@ void main() {
 
     peers.first.emitState(WebRtcPeerState.connected);
     expect(engine.state.sessionPhase, MediaSessionPhase.connected);
+    expect(engine.state.audioPhase, MediaTrackPhase.starting);
+    final audioTrack = FakeMediaStreamTrack('audio-track-1', 'audio');
+    peers.first.emitTrack(audioTrack);
+    await eventually(() => playback.attached.contains(audioTrack));
     expect(engine.state.audioPhase, MediaTrackPhase.on);
 
     peers.first.emitCandidate(
@@ -64,6 +71,7 @@ void main() {
 
     await engine.startVideo();
     expect(peers.first.closed, isTrue);
+    expect(playback.detached, contains(audioTrack));
     expect(signaling.stopped, contains('session-1'));
     expect(peers[1].receiveOnly, [
       WebRtcMediaKind.audio,
@@ -91,6 +99,7 @@ void main() {
     var peerCreations = 0;
     final engine = WebRtcMediaEngine(
       signalingFactory: (_) => signaling,
+      audioPlayback: FakeAudioPlayback(),
       peerFactory: () async {
         peerCreations += 1;
         return FakePeer(peerCreations);
@@ -112,6 +121,7 @@ void main() {
     final signaling = FakeSignaling();
     final engine = WebRtcMediaEngine(
       signalingFactory: (_) => signaling,
+      audioPlayback: FakeAudioPlayback(),
       peerFactory: () async => throw StateError('native peer failed'),
     );
 
@@ -120,6 +130,102 @@ void main() {
 
     expect(signaling.stopped, ['session-1']);
     expect(engine.state.sessionPhase, MediaSessionPhase.failed);
+    await engine.dispose();
+  });
+
+  test('failed peer reconnects with a new session and stop cancels retries',
+      () async {
+    final signaling = FakeSignaling();
+    final peers = <FakePeer>[];
+    final engine = WebRtcMediaEngine(
+      signalingFactory: (_) => signaling,
+      audioPlayback: FakeAudioPlayback(),
+      reconnectDelays: const [Duration.zero, Duration.zero],
+      disconnectGrace: Duration.zero,
+      connectionTimeout: const Duration(seconds: 30),
+      peerFactory: () async {
+        final peer = FakePeer(peers.length + 1);
+        peers.add(peer);
+        return peer;
+      },
+    );
+
+    await engine.initialize(testContext);
+    await engine.startAudio();
+    peers.first.emitState(WebRtcPeerState.connected);
+    peers.first.emitState(WebRtcPeerState.failed);
+
+    await eventually(() => signaling.created.length == 2);
+    expect(peers.first.closed, isTrue);
+    expect(signaling.stopped, contains('session-1'));
+    expect(peers, hasLength(2));
+
+    await engine.stopAudio();
+    final sessionCountAfterStop = signaling.created.length;
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(signaling.created, hasLength(sessionCountAfterStop));
+    expect(engine.state.sessionPhase, MediaSessionPhase.idle);
+    await engine.dispose();
+  });
+
+  test('brief disconnect recovery keeps the existing peer session', () async {
+    final signaling = FakeSignaling();
+    final peers = <FakePeer>[];
+    final engine = WebRtcMediaEngine(
+      signalingFactory: (_) => signaling,
+      audioPlayback: FakeAudioPlayback(),
+      reconnectDelays: const [Duration.zero],
+      disconnectGrace: const Duration(milliseconds: 30),
+      connectionTimeout: const Duration(seconds: 30),
+      peerFactory: () async {
+        final peer = FakePeer(peers.length + 1);
+        peers.add(peer);
+        return peer;
+      },
+    );
+
+    await engine.initialize(testContext);
+    await engine.startAudio();
+    peers.single.emitState(WebRtcPeerState.connected);
+    peers.single.emitState(WebRtcPeerState.disconnected);
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    peers.single.emitState(WebRtcPeerState.connected);
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+
+    expect(signaling.created, hasLength(1));
+    expect(peers, hasLength(1));
+    expect(peers.single.closed, isFalse);
+    await engine.stopAudio();
+    await engine.dispose();
+  });
+
+  test('reconnect attempts stop at the configured bound', () async {
+    final signaling = FakeSignaling();
+    final peers = <FakePeer>[];
+    final engine = WebRtcMediaEngine(
+      signalingFactory: (_) => signaling,
+      audioPlayback: FakeAudioPlayback(),
+      reconnectDelays: const [Duration.zero, Duration.zero],
+      connectionTimeout: const Duration(seconds: 30),
+      peerFactory: () async {
+        final peer = FakePeer(peers.length + 1);
+        peers.add(peer);
+        return peer;
+      },
+    );
+
+    await engine.initialize(testContext);
+    await engine.startAudio();
+    peers[0].emitState(WebRtcPeerState.failed);
+    await eventually(() => peers.length == 2);
+    peers[1].emitState(WebRtcPeerState.failed);
+    await eventually(() => peers.length == 3);
+    peers[2].emitState(WebRtcPeerState.failed);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(signaling.created, hasLength(3));
+    expect(engine.state.sessionPhase, MediaSessionPhase.failed);
+    await engine.stopAudio();
     await engine.dispose();
   });
 }
@@ -237,6 +343,7 @@ class FakePeer implements WebRtcPeer {
   bool closed = false;
   void Function(WebRtcIceCandidate? candidate)? _onLocalCandidate;
   void Function(WebRtcPeerState state)? _onState;
+  void Function(RTCTrackEvent event)? _onTrack;
 
   @override
   set onLocalCandidate(
@@ -251,7 +358,9 @@ class FakePeer implements WebRtcPeer {
   }
 
   @override
-  set onTrack(void Function(RTCTrackEvent event)? _) {}
+  set onTrack(void Function(RTCTrackEvent event)? callback) {
+    _onTrack = callback;
+  }
 
   @override
   Future<void> addReceiveOnly(WebRtcMediaKind kind) async {
@@ -283,6 +392,55 @@ class FakePeer implements WebRtcPeer {
   void emitState(WebRtcPeerState state) {
     _onState?.call(state);
   }
+
+  void emitTrack(MediaStreamTrack track) {
+    _onTrack?.call(RTCTrackEvent(streams: const [], track: track));
+  }
+}
+
+class FakeAudioPlayback implements WebRtcAudioPlayback {
+  final List<MediaStreamTrack> attached = [];
+  final List<MediaStreamTrack> detached = [];
+  int prepareCalls = 0;
+  int resetCalls = 0;
+
+  @override
+  Future<void> prepare() async {
+    prepareCalls += 1;
+  }
+
+  @override
+  Future<void> attach(MediaStreamTrack track) async {
+    attached.add(track);
+    track.enabled = true;
+  }
+
+  @override
+  Future<void> detach(MediaStreamTrack track) async {
+    detached.add(track);
+    track.enabled = false;
+  }
+
+  @override
+  Future<void> reset() async {
+    resetCalls += 1;
+  }
+}
+
+class FakeMediaStreamTrack implements MediaStreamTrack {
+  FakeMediaStreamTrack(this.id, this.kind);
+
+  @override
+  final String id;
+
+  @override
+  final String kind;
+
+  @override
+  bool enabled = true;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 Future<void> eventually(
