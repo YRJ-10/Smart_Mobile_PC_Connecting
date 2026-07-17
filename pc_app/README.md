@@ -31,7 +31,9 @@ Catatan:
 - Worker WebRTC berjalan sebagai renderer tersembunyi milik Electron, lazy-start
   saat media session pertama aktif, dan berhenti setelah session terakhir.
 - Capture system audio WebRTC tersedia secara lazy melalui Windows loopback dan
-  Opus 48 kHz. Capture video WebRTC belum aktif.
+  Opus 48 kHz.
+- Capture primary display WebRTC tersedia secara lazy pada native resolution,
+  maksimum 30 fps, dengan H.264/VP8 dan congestion control bawaan WebRTC.
 - Engine legacy tetap menjadi jalur media aplikasi sampai cutover akhir.
 
 ## Fase 2: Server Core

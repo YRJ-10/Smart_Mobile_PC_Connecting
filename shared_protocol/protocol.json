@@ -75,7 +75,10 @@
         "sampleRate": 48000
       },
       "video": {
-        "preferredCodecs": ["H264", "VP8"]
+        "preferredCodecs": ["H264", "VP8"],
+        "source": "primary-display",
+        "maxFrameRate": 30,
+        "adaptiveBitrate": "webrtc-native"
       }
     }
   },

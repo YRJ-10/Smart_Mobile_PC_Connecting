@@ -2,7 +2,13 @@ import { EventEmitter } from "node:events";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
-import { BrowserWindow, desktopCapturer, ipcMain, session } from "electron";
+import {
+  BrowserWindow,
+  desktopCapturer,
+  ipcMain,
+  screen as electronScreen,
+  session
+} from "electron";
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const MEDIA_RENDERER_DIR = join(MODULE_DIR, "..", "..", "renderer", "media-worker");
@@ -21,6 +27,7 @@ export class MediaWorkerProcess extends EventEmitter {
   #ipcAttached = false;
   #electronSession = null;
   #audioCaptureState = { active: false, sessions: 0, settings: null };
+  #videoCaptureState = { active: false, sessions: 0, settings: null, encoding: null };
 
   get available() {
     return true;
@@ -35,7 +42,8 @@ export class MediaWorkerProcess extends EventEmitter {
       available: this.available,
       running: this.running,
       sessions: this.#sessions.size,
-      audio: { ...this.#audioCaptureState }
+      audio: { ...this.#audioCaptureState },
+      video: { ...this.#videoCaptureState }
     };
   }
 
@@ -146,7 +154,10 @@ export class MediaWorkerProcess extends EventEmitter {
     const workerSession = session.fromPartition("smart-mpc-media-worker");
     const allowedUrl = pathToFileURL(join(MEDIA_RENDERER_DIR, "index.html")).href;
     workerSession.setDisplayMediaRequestHandler(async (request, callback) => {
-      if (!request.audioRequested || request.frame?.url !== allowedUrl) {
+      if (
+        (!request.audioRequested && !request.videoRequested) ||
+        request.frame?.url !== allowedUrl
+      ) {
         callback({});
         return;
       }
@@ -159,7 +170,12 @@ export class MediaWorkerProcess extends EventEmitter {
           callback({});
           return;
         }
-        callback({ video: sources[0], audio: "loopback" });
+        const primaryId = String(electronScreen.getPrimaryDisplay().id);
+        const source = sources.find((value) => value.display_id === primaryId) ?? sources[0];
+        callback({
+          video: request.videoRequested ? source : undefined,
+          audio: request.audioRequested ? "loopback" : undefined
+        });
       } catch {
         callback({});
       }
@@ -206,6 +222,16 @@ export class MediaWorkerProcess extends EventEmitter {
       this.emit("audio-capture-state", this.state());
       return;
     }
+    if (payload.type === "video-capture-state") {
+      this.#videoCaptureState = {
+        active: Boolean(payload.state?.active),
+        sessions: Number(payload.state?.sessions ?? 0),
+        settings: payload.state?.settings ?? null,
+        encoding: payload.state?.encoding ?? null
+      };
+      this.emit("video-capture-state", this.state());
+      return;
+    }
     if (payload.type === "worker-error") {
       this.emit("worker-error", payload);
     }
@@ -231,6 +257,12 @@ export class MediaWorkerProcess extends EventEmitter {
     this.#resolveStopped = null;
     this.#stopping = false;
     this.#audioCaptureState = { active: false, sessions: 0, settings: null };
+    this.#videoCaptureState = {
+      active: false,
+      sessions: 0,
+      settings: null,
+      encoding: null
+    };
   }
 }
 

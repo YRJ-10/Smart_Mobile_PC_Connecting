@@ -1,4 +1,5 @@
 import { SystemAudioCapture } from "./system-audio-capture.js";
+import { ScreenVideoCapture } from "./screen-video-capture.js";
 
 const bridge = window.smartMpcMediaWorker;
 const sessions = new Map();
@@ -9,6 +10,17 @@ const systemAudio = new SystemAudioCapture({
         type: "worker-error",
         session_id: sessionId,
         error: "Windows system audio capture ended unexpectedly"
+      });
+    }
+  }
+});
+const screenVideo = new ScreenVideoCapture({
+  onSourceEnded(sessionIds) {
+    for (const sessionId of sessionIds) {
+      bridge.sendEvent({
+        type: "worker-error",
+        session_id: sessionId,
+        error: "Primary display capture ended unexpectedly"
       });
     }
   }
@@ -31,6 +43,7 @@ bridge.onCommand(async (command) => {
     if (command.type === "shutdown") {
       for (const sessionId of [...sessions.keys()]) closeSession(sessionId);
       systemAudio.stop();
+      screenVideo.stop();
       bridge.sendEvent({ type: "worker-stopped" });
       return;
     }
@@ -77,6 +90,9 @@ async function openSession(session) {
     peer,
     tracks: session.tracks,
     audioTrack: null,
+    videoTrack: null,
+    videoSender: null,
+    videoEncoding: null,
     closed: false,
     remoteDescriptionSet: false,
     pendingCandidates: []
@@ -100,10 +116,25 @@ async function handleSignal(sessionId, signal) {
       const attached = await attachSystemAudio(sessionId, session);
       if (!attached) return;
     }
+    if (session.tracks.video) {
+      const attached = await attachScreenVideo(sessionId, session);
+      if (!attached) return;
+    }
     if (!isActiveSession(sessionId, session)) return;
     const answer = await session.peer.createAnswer();
     await session.peer.setLocalDescription(answer);
     if (!isActiveSession(sessionId, session)) return;
+    if (session.videoTrack && session.videoSender) {
+      session.videoEncoding = await configureVideoSender(
+        session.videoSender,
+        session.videoTrack
+      );
+      bridge.sendEvent({
+        type: "video-capture-state",
+        session_id: sessionId,
+        state: currentVideoState()
+      });
+    }
     bridge.sendEvent({
       type: "server-signal",
       session_id: sessionId,
@@ -140,11 +171,21 @@ function closeSession(sessionId) {
   session.peer.onconnectionstatechange = null;
   session.peer.close();
   systemAudio.release(sessionId);
+  screenVideo.release(sessionId);
+  session.audioTrack = null;
+  session.videoTrack = null;
+  session.videoSender = null;
+  session.videoEncoding = null;
   sessions.delete(sessionId);
   bridge.sendEvent({
     type: "audio-capture-state",
     session_id: sessionId,
     state: systemAudio.state()
+  });
+  bridge.sendEvent({
+    type: "video-capture-state",
+    session_id: sessionId,
+    state: currentVideoState()
   });
   bridge.sendEvent({ type: "session-closed", session_id: sessionId });
 }
@@ -174,6 +215,89 @@ async function attachSystemAudio(sessionId, session) {
     state: systemAudio.state()
   });
   return true;
+}
+
+async function attachScreenVideo(sessionId, session) {
+  const transceiver = session.peer.getTransceivers().find((value) => (
+    value.receiver.track.kind === "video"
+  ));
+  if (!transceiver) throw new Error("Android offer has no video transceiver");
+
+  const track = await screenVideo.acquire(sessionId);
+  if (!isActiveSession(sessionId, session)) {
+    screenVideo.release(sessionId);
+    return false;
+  }
+  session.videoTrack = track;
+  await transceiver.sender.replaceTrack(track);
+  transceiver.direction = "sendonly";
+  configureVideoCodecs(transceiver);
+  session.videoSender = transceiver.sender;
+  return true;
+}
+
+function configureVideoCodecs(transceiver) {
+  const capabilities = RTCRtpSender.getCapabilities("video")?.codecs ?? [];
+  const h264 = capabilities
+    .filter((codec) => codec.mimeType.toLowerCase() === "video/h264")
+    .sort((left, right) => h264Preference(right) - h264Preference(left));
+  const vp8 = capabilities.filter(
+    (codec) => codec.mimeType.toLowerCase() === "video/vp8"
+  );
+  const support = capabilities.filter((codec) => [
+    "video/rtx",
+    "video/red",
+    "video/ulpfec",
+    "video/flexfec-03"
+  ].includes(codec.mimeType.toLowerCase()));
+  const codecs = [...h264, ...vp8, ...support];
+  if (!h264.length && !vp8.length) {
+    throw new Error("Chromium H.264/VP8 encoder is unavailable");
+  }
+  transceiver.setCodecPreferences(codecs);
+}
+
+async function configureVideoSender(sender, track) {
+  const settings = track.getSettings?.() ?? {};
+  const maxBitrate = bitrateForResolution(settings.width, settings.height);
+  const parameters = sender.getParameters();
+  parameters.encodings ??= [{}];
+  if (!parameters.encodings.length) parameters.encodings.push({});
+  parameters.encodings[0].maxBitrate = maxBitrate;
+  parameters.encodings[0].maxFramerate = 30;
+  parameters.encodings[0].scaleResolutionDownBy = 1;
+  parameters.degradationPreference = "maintain-resolution";
+  await sender.setParameters(parameters);
+  return {
+    max_bitrate: maxBitrate,
+    max_framerate: 30,
+    content_hint: track.contentHint,
+    congestion_control: "webrtc-native",
+    degradation_preference: "maintain-resolution"
+  };
+}
+
+function bitrateForResolution(width = 0, height = 0) {
+  const pixels = Number(width) * Number(height);
+  if (pixels > 2560 * 1440) return 36_000_000;
+  if (pixels > 1920 * 1080) return 20_000_000;
+  return 12_000_000;
+}
+
+function h264Preference(codec) {
+  const fmtp = codec.sdpFmtpLine?.toLowerCase() ?? "";
+  let score = 0;
+  if (fmtp.includes("packetization-mode=1")) score += 2;
+  if (/profile-level-id=42/.test(fmtp)) score += 1;
+  return score;
+}
+
+function currentVideoState() {
+  const active = [...sessions.values()].find((session) => session.videoTrack);
+  return {
+    ...screenVideo.state(),
+    encoding: active?.videoEncoding ?? null
+  };
 }
 
 function isActiveSession(sessionId, session) {

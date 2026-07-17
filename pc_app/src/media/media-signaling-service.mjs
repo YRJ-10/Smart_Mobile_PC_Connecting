@@ -45,7 +45,12 @@ export class MediaSignalingService extends EventEmitter {
           signaling_available: true,
           media_available: this.#workerReady,
           audio: { codecs: ["opus"], sample_rate: 48000 },
-          video: { codecs: ["H264", "VP8"] }
+          video: {
+            codecs: ["H264", "VP8"],
+            source: "primary-display",
+            max_frame_rate: 30,
+            congestion_control: "webrtc-native"
+          }
         }
       }
     };

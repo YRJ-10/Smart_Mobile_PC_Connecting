@@ -16,6 +16,12 @@ test("capabilities stay local and do not advertise media before worker readiness
   assert.equal(capabilities.engines.webrtc.signaling_available, true);
   assert.equal(capabilities.engines.webrtc.media_available, false);
   assert.deepEqual(capabilities.engines.webrtc.audio.codecs, ["opus"]);
+  assert.deepEqual(capabilities.engines.webrtc.video, {
+    codecs: ["H264", "VP8"],
+    source: "primary-display",
+    max_frame_rate: 30,
+    congestion_control: "webrtc-native"
+  });
 });
 
 test("a new session replaces the previous session owned by the same device", () => {
