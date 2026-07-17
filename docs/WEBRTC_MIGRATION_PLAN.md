@@ -1,0 +1,30 @@
+# WebRTC Media Migration Plan
+
+Migrasi dilakukan dalam 12 fase. Pengujian build dilakukan pada titik integrasi
+penting, bukan setelah setiap edit kecil.
+
+## Fase
+
+- [x] Fase 0 - Kunci baseline, fitur, resource contract, dan rollback.
+- [ ] Fase 1 - Kontrak isolasi modul dan batas perubahan source.
+- [ ] Fase 2 - Proof of concept WebRTC lokal pada PC dan Android.
+- [ ] Fase 3 - Signaling lokal melalui PC Server yang sudah ada.
+- [ ] Fase 4 - Media worker PC yang lazy-start dan process-tree safe.
+- [ ] Fase 5 - Foundation peer connection WebRTC di Android.
+- [ ] Fase 6 - Capture system audio PC dan transport Opus 48 kHz.
+- [ ] Fase 7 - Playback audio Android, jitter handling, dan reconnect.
+- [ ] Fase 8 - Foreground media service, MediaSession, notification, dan lock screen.
+- [ ] Fase 9 - Screen capture PC dengan H.264/VP8 dan adaptive bitrate.
+- [ ] Fase 10 - Render mirror Android, fullscreen, lifecycle, dan reconnect.
+- [ ] Fase 11 - Uji holistik, resource audit, cutover, cleanup, dan release.
+
+## Aturan Eksekusi
+
+- Mesin lama tetap tersedia sampai pengganti lulus acceptance gate.
+- Feature flag menentukan mesin media yang dipakai selama migrasi.
+- Tidak ada fallback diam-diam yang menyembunyikan kegagalan WebRTC.
+- Setiap fase mencatat file yang disentuh, perilaku yang dipertahankan, dan hasil
+  sanity check.
+- Dependency baru harus gratis, dapat didistribusikan, dan berfungsi di LAN tanpa
+  layanan eksternal.
+- Resource media harus nol atau mendekati nol saat fitur media tidak aktif.
