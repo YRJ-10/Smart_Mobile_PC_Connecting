@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SmartMpcServer } from "../server.mjs";
+import { MediaWorkerProcess } from "../media/media-worker-process.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const appRoot = join(__dirname, "..", "..");
@@ -10,7 +11,8 @@ const rendererRoot = join(appRoot, "renderer");
 const iconPath = app.isPackaged
   ? join(process.resourcesPath, "appicon.png")
   : join(appRoot, "assets", "appicon.png");
-const server = new SmartMpcServer();
+const mediaWorker = new MediaWorkerProcess();
+const server = new SmartMpcServer({ mediaWorker });
 
 let mainWindow = null;
 let tray = null;

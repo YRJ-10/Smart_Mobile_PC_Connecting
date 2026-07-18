@@ -3,6 +3,7 @@ package com.smartmpc.app
 import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -19,13 +20,17 @@ import java.net.URLEncoder
 
 class MainActivity : FlutterActivity() {
     private val channelName = "smart_mpc/preferences"
+    private val webRtcMediaChannelName = "smart_mpc/webrtc_media"
     private var channel: MethodChannel? = null
+    private var webRtcMediaChannel: MethodChannel? = null
+    private var webRtcMediaCommandListener: ((String) -> Unit)? = null
     private var pendingUpload: UploadConfig? = null
     private var latestDeepLink: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         latestDeepLink = deepLinkFrom(intent)
         super.onCreate(savedInstanceState)
+        volumeControlStream = AudioManager.STREAM_MUSIC
     }
 
     override fun getRenderMode(): RenderMode {
@@ -114,6 +119,52 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        webRtcMediaChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            webRtcMediaChannelName,
+        )
+        webRtcMediaChannel?.setMethodCallHandler { call, result ->
+            val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any?>()
+            when (call.method) {
+                "start" -> {
+                    startWebRtcMediaService(
+                        title = args["title"] as? String ?: "PC Audio",
+                        playing = args["playing"] as? Boolean ?: true,
+                    )
+                    result.success(true)
+                }
+                "update" -> {
+                    updateWebRtcMediaService(
+                        title = args["title"] as? String ?: "PC Audio",
+                        playing = args["playing"] as? Boolean ?: true,
+                    )
+                    result.success(true)
+                }
+                "stop" -> {
+                    stopWebRtcMediaService()
+                    result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
+        val commandListener: (String) -> Unit = { command ->
+            runOnUiThread {
+                webRtcMediaChannel?.invokeMethod("command", command)
+            }
+        }
+        webRtcMediaCommandListener = commandListener
+        WebRtcMediaCommandBridge.setListener(commandListener)
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        webRtcMediaCommandListener?.let(WebRtcMediaCommandBridge::clearListener)
+        webRtcMediaCommandListener = null
+        webRtcMediaChannel?.setMethodCallHandler(null)
+        webRtcMediaChannel = null
+        channel?.setMethodCallHandler(null)
+        channel = null
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -324,6 +375,33 @@ class MainActivity : FlutterActivity() {
             action = AudioReceiverService.ACTION_STOP
         }
         startService(intent)
+    }
+
+    private fun startWebRtcMediaService(title: String, playing: Boolean) {
+        val intent = Intent(this, WebRtcMediaService::class.java).apply {
+            action = WebRtcMediaService.ACTION_START
+            putExtra(WebRtcMediaService.EXTRA_TITLE, title)
+            putExtra(WebRtcMediaService.EXTRA_PLAYING, playing)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+    }
+
+    private fun updateWebRtcMediaService(title: String, playing: Boolean) {
+        startService(
+            Intent(this, WebRtcMediaService::class.java).apply {
+                action = WebRtcMediaService.ACTION_UPDATE
+                putExtra(WebRtcMediaService.EXTRA_TITLE, title)
+                putExtra(WebRtcMediaService.EXTRA_PLAYING, playing)
+            },
+        )
+    }
+
+    private fun stopWebRtcMediaService() {
+        stopService(Intent(this, WebRtcMediaService::class.java))
     }
 
     private data class UploadConfig(

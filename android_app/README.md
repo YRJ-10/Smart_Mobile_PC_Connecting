@@ -89,3 +89,16 @@ flutter run
 ```
 
 Catatan: Android harus satu Wi-Fi dengan PC. Gunakan IP PC lokal, bukan loopback address.
+
+## Media WebRTC Production
+
+Audio dan mirror production memakai modul WebRTC di `lib/media/`:
+
+- audio system PC dikirim sebagai Opus 48 kHz dan diputar oleh native WebRTC;
+- audio tetap aktif saat layar terkunci melalui foreground media service;
+- notification dan lock screen menyediakan kontrol playback;
+- mirror memakai remote video track WebRTC pada native source resolution;
+- mirror hanya menampilkan layar, tanpa touch injection;
+- peer, track, renderer, dan service dilepas ketika media tidak lagi aktif;
+- receiver PCM/UDP dan TCP/JPEG lama tetap tersedia sebagai compatibility source,
+  tetapi tidak dipanggil oleh UI production.

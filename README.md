@@ -48,9 +48,25 @@ Dokumen repair:
 - [Repair Phase 13 PC Server Compatibility Bridge](docs/REPAIR_PHASE_13_PC_SERVER_COMPATIBILITY_BRIDGE.md)
 - [Repair Phase 14 Holistic Test Prep](docs/REPAIR_PHASE_14_HOLISTIC_TEST_PREP.md)
 
+Migrasi media production:
+
+- [WebRTC Migration Phase 0 Baseline](docs/WEBRTC_MIGRATION_PHASE_0_BASELINE.md)
+- [WebRTC Migration Phase 1 Isolation Contract](docs/WEBRTC_MIGRATION_PHASE_1_ISOLATION_CONTRACT.md)
+- [WebRTC Migration Phase 2 Proof of Concept](docs/WEBRTC_MIGRATION_PHASE_2_PROOF_OF_CONCEPT.md)
+- [WebRTC Migration Phase 3 Local Signaling](docs/WEBRTC_MIGRATION_PHASE_3_LOCAL_SIGNALING.md)
+- [WebRTC Migration Phase 4 PC Media Worker](docs/WEBRTC_MIGRATION_PHASE_4_PC_MEDIA_WORKER.md)
+- [WebRTC Migration Phase 5 Android Peer Foundation](docs/WEBRTC_MIGRATION_PHASE_5_ANDROID_PEER_FOUNDATION.md)
+- [WebRTC Migration Phase 6 PC System Audio](docs/WEBRTC_MIGRATION_PHASE_6_PC_SYSTEM_AUDIO.md)
+- [WebRTC Migration Phase 7 Android Audio Playback](docs/WEBRTC_MIGRATION_PHASE_7_ANDROID_AUDIO_PLAYBACK.md)
+- [WebRTC Migration Phase 8 Foreground Media](docs/WEBRTC_MIGRATION_PHASE_8_FOREGROUND_MEDIA.md)
+- [WebRTC Migration Phase 9 PC Screen Video](docs/WEBRTC_MIGRATION_PHASE_9_PC_SCREEN_VIDEO.md)
+- [WebRTC Migration Phase 10 Android Mirror](docs/WEBRTC_MIGRATION_PHASE_10_ANDROID_MIRROR.md)
+- [WebRTC Migration Phase 11 Production Cutover](docs/WEBRTC_MIGRATION_PHASE_11_PRODUCTION_CUTOVER.md)
+- [WebRTC Media Migration Plan](docs/WEBRTC_MIGRATION_PLAN.md)
+
 Struktur modul:
 
-- [android_app](android_app/README.md) - aplikasi Android Flutter, NFC entry, dan native audio receiver.
+- [android_app](android_app/README.md) - aplikasi Android Flutter, NFC entry, remote control, dan media WebRTC.
 - [pc_app](pc_app/README.md) - desktop app PC, Node server utama, pairing, file, clipboard, dan bridge ke worker.
 - [pc_worker](pc_worker/README.md) - worker Python untuk kontrol PC, audio loopback, dan screen capture.
 - [shared_protocol](shared_protocol/README.md) - kontrak endpoint, command, event, channel, dan auth.

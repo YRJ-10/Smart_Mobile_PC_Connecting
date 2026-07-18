@@ -26,6 +26,12 @@ import { ControlServer } from "./control-server.mjs";
 import { DiscoveryServer } from "./discovery-server.mjs";
 import { ScreenServer } from "./screen-server.mjs";
 import { RequestLog } from "./request-log.mjs";
+import { MediaSignalingService } from "./media/media-signaling-service.mjs";
+import { MediaSessionManager } from "./media/media-session-manager.mjs";
+import {
+  handleMediaSignalingRequest,
+  isMediaSignalingRoute
+} from "./media/media-signaling-routes.mjs";
 
 function safeFilename(name) {
   const cleaned = String(name ?? "")
@@ -216,16 +222,24 @@ export class SmartMpcServer {
   #controlServer;
   #discoveryServer;
   #screenServer;
+  #mediaSignaling;
+  #mediaSessionManager;
   #sessions = new Map();
   #server = null;
   #startedAt = null;
 
-  constructor({ config = loadOrCreateConfig(), requestLog = new RequestLog() } = {}) {
+  constructor({ config = loadOrCreateConfig(), requestLog = new RequestLog(), mediaWorker = null } = {}) {
     this.#config = config;
     this.#requestLog = requestLog;
     this.#controlServer = new ControlServer({ config: this.#config, requestLog: this.#requestLog });
     this.#discoveryServer = new DiscoveryServer({ config: this.#config, requestLog: this.#requestLog });
     this.#screenServer = new ScreenServer({ config: this.#config, requestLog: this.#requestLog });
+    this.#mediaSignaling = new MediaSignalingService({ requestLog: this.#requestLog });
+    this.#mediaSessionManager = new MediaSessionManager({
+      signaling: this.#mediaSignaling,
+      worker: mediaWorker,
+      requestLog: this.#requestLog
+    });
   }
 
   get config() {
@@ -256,6 +270,8 @@ export class SmartMpcServer {
       control: this.#controlServer.state(),
       discovery: this.#discoveryServer.state(),
       screen: this.#screenServer.state(),
+      media: this.#mediaSignaling.state(),
+      media_runtime: this.#mediaSessionManager.state(),
       trusted_devices: Object.entries(this.#config.trusted_devices ?? {}).map(([id, device]) => ({
         id,
         name: device.name,
@@ -313,6 +329,7 @@ export class SmartMpcServer {
     await this.#screenServer
       .stop()
       .catch((error) => this.#requestLog.add("screen_error", { error: error.message }));
+    await this.#mediaSessionManager.stopAll();
 
     if (!this.#server) return this.state();
 
@@ -337,6 +354,7 @@ export class SmartMpcServer {
     if (!id || !this.#config.trusted_devices?.[id]) return this.state();
 
     const device = this.#config.trusted_devices[id];
+    this.#mediaSignaling.stopDeviceSessions(id);
     delete this.#config.trusted_devices[id];
     saveConfig(this.#config);
     this.#requestLog.add("device_revoked", { device: device.name ?? id });
@@ -379,6 +397,25 @@ export class SmartMpcServer {
 
     if (req.method === "POST" && route === "/api/devices/register") {
       await this.#registerDevice(req, res);
+      return;
+    }
+
+    if (isMediaSignalingRoute(route)) {
+      const deviceId = this.#authorizedDeviceId(req);
+      if (!deviceId) {
+        this.#requestLog.add("unauthorized", { route });
+        sendJson(res, 401, { ok: false, error: "Unauthorized" });
+        return;
+      }
+      await handleMediaSignalingRequest({
+        req,
+        res,
+        requestUrl,
+        deviceId,
+        signaling: this.#mediaSignaling,
+        readJson,
+        sendJson
+      });
       return;
     }
 
@@ -639,21 +676,25 @@ export class SmartMpcServer {
   }
 
   #isAuthorized(req) {
+    return Boolean(this.#authorizedDeviceId(req));
+  }
+
+  #authorizedDeviceId(req) {
     const sessionToken = String(req.headers[HEADER_SESSION_TOKEN] ?? "").trim();
     if (sessionToken && this.#sessions.has(sessionToken)) {
       const session = this.#sessions.get(sessionToken);
       session.last_seen_at = new Date().toISOString();
-      return true;
+      return session.device_id;
     }
 
     const deviceId = String(req.headers[HEADER_DEVICE_ID] ?? "").trim();
     const deviceToken = String(req.headers[HEADER_DEVICE_TOKEN] ?? "").trim();
     const trustedDevice = this.#config.trusted_devices?.[deviceId];
-    if (!trustedDevice || trustedDevice.token !== deviceToken) return false;
+    if (!trustedDevice || trustedDevice.token !== deviceToken) return "";
 
     trustedDevice.last_seen_at = new Date().toISOString();
     saveConfig(this.#config);
-    return true;
+    return deviceId;
   }
 
   #startSession(req) {

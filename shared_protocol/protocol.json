@@ -1,6 +1,6 @@
 {
   "name": "Smart MPC Protocol",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "auth": {
     "pairingHeader": "X-Pairing-Token",
     "deviceIdHeader": "X-Device-Id",
@@ -24,7 +24,13 @@
       { "method": "POST", "path": "/api/files", "auth": "device", "purpose": "Upload file from Android to PC inbox." },
       { "method": "GET", "path": "/api/clipboard", "auth": "device", "purpose": "Pull PC clipboard to Android." },
       { "method": "GET", "path": "/api/request-files", "auth": "device", "purpose": "List PC outbox files." },
-      { "method": "GET", "path": "/api/request-files/download", "auth": "device", "purpose": "Download PC outbox file." }
+      { "method": "GET", "path": "/api/request-files/download", "auth": "device", "purpose": "Download PC outbox file." },
+      { "method": "GET", "path": "/api/media/capabilities", "auth": "device", "purpose": "Read local WebRTC signaling and codec capabilities." },
+      { "method": "POST", "path": "/api/media/sessions", "auth": "device", "purpose": "Create one owned WebRTC media session." },
+      { "method": "GET", "path": "/api/media/sessions/{id}/status", "auth": "device", "purpose": "Read owned media session state." },
+      { "method": "POST", "path": "/api/media/sessions/{id}/signals", "auth": "device", "purpose": "Publish Android offer or ICE signal." },
+      { "method": "GET", "path": "/api/media/sessions/{id}/signals", "auth": "device", "purpose": "Long-poll PC answer or ICE signals." },
+      { "method": "POST", "path": "/api/media/sessions/{id}/stop", "auth": "device", "purpose": "Stop an owned media session." }
     ]
   },
   "channels": {
@@ -56,6 +62,24 @@
       "path": null,
       "frameEncoding": "jpeg",
       "auth": "trusted-device-first-message"
+    },
+    "mediaWebrtc": {
+      "transport": "webrtc",
+      "signaling": "http-long-poll",
+      "signalingPort": 8765,
+      "iceServers": [],
+      "localOnly": true,
+      "auth": "trusted-device-http",
+      "audio": {
+        "codec": "opus",
+        "sampleRate": 48000
+      },
+      "video": {
+        "preferredCodecs": ["H264", "VP8"],
+        "source": "primary-display",
+        "maxFrameRate": 30,
+        "adaptiveBitrate": "webrtc-native"
+      }
     }
   },
   "intentTypes": [
@@ -128,6 +152,8 @@
     "discovery_started",
     "discovery_stopped",
     "discovery_response",
+    "media_session_started",
+    "media_session_stopped",
     "unauthorized"
   ],
   "compatibility": {

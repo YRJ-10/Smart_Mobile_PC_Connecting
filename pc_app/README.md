@@ -28,6 +28,15 @@ Catatan:
 - `pc_app` menjadi pusat trust/auth.
 - Channel remote-control dari worker harus dilindungi oleh trusted device/session.
 - Runtime data lokal seperti `config.json`, `inbox`, `outbox`, dan logs tidak masuk git.
+- Worker WebRTC berjalan sebagai renderer tersembunyi milik Electron, lazy-start
+  saat media session pertama aktif, dan berhenti setelah session terakhir.
+- Capture system audio WebRTC tersedia secara lazy melalui Windows loopback dan
+  Opus 48 kHz.
+- Capture primary display WebRTC tersedia secara lazy pada native resolution,
+  maksimum 30 fps, dengan H.264/VP8 dan congestion control bawaan WebRTC.
+- UI Android production memakai engine WebRTC. Listener legacy dipertahankan
+  sementara untuk rollback dan compatibility, tetapi tidak dipanggil oleh client
+  production.
 
 ## Fase 2: Server Core
 
@@ -47,6 +56,12 @@ Endpoint awal:
 - `POST /api/devices/register`
 - `POST /api/session/start`
 - `POST /api/session/stop`
+- `GET /api/media/capabilities`
+- `POST /api/media/sessions`
+- `GET /api/media/sessions/{id}/status`
+- `POST /api/media/sessions/{id}/signals`
+- `GET /api/media/sessions/{id}/signals`
+- `POST /api/media/sessions/{id}/stop`
 - `GET /api/server/state`
 - `POST /api/intent`
 - `POST /api/files`
@@ -67,8 +82,10 @@ Remote control:
 - Pesan pertama harus auth trusted device.
 - Command remote divalidasi di `src/control-server.mjs`.
 - Eksekusi OS diteruskan ke `pc_worker`.
-- Audio toggle memakai control channel untuk start/stop worker audio stream ke Android.
-- Screen mirror memakai TCP channel `8082`, trusted auth, dan worker screen streamer.
+- Audio toggle legacy memakai control channel untuk worker PCM/UDP compatibility.
+- Screen mirror legacy memakai TCP channel `8082` dan worker screen streamer.
+- Audio dan mirror production memakai signaling HTTP tepercaya serta hidden WebRTC
+  media worker yang berhenti setelah session terakhir.
 - Discovery memakai UDP port `8081` dan merespons request baru maupun legacy.
 
 Runtime files yang dibuat saat server dijalankan:

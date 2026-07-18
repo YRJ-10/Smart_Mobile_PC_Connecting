@@ -5,8 +5,18 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+
+import 'media/media_engine.dart';
+import 'media/media_state.dart';
+import 'media/webrtc_media_engine.dart';
+import 'media/webrtc_media_service.dart';
+import 'media/webrtc_mirror_lifecycle.dart';
+import 'media/webrtc_mirror_system_ui.dart';
+import 'media/webrtc_mirror_view.dart';
+import 'media/webrtc_video_renderer.dart';
 
 const _appBackground = Color(0xFF0F1416);
 const _panelColor = Color(0xFF151B1F);
@@ -18,7 +28,15 @@ const _warningSoft = Color(0xFFE2B978);
 const _dangerSoft = Color(0xFFD87A7A);
 const _mutedText = Color(0xFF9AA8AF);
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (Platform.isAndroid) {
+    await WebRTC.initialize(
+      options: <String, dynamic>{
+        'androidAudioConfiguration': AndroidAudioConfiguration.media.toMap(),
+      },
+    );
+  }
   runApp(const SmartMpcApp());
 }
 
@@ -131,7 +149,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _busy = false;
   bool _remoteConnected = false;
   bool _audioEnabled = false;
-  bool _mirrorConnected = false;
   bool _voiceListening = false;
   bool _bootstrapping = true;
   bool _trustedConnectNoticeShown = false;
@@ -153,12 +170,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String _lastLiveText = '';
   String _lastRecognizedWords = '';
   Socket? _controlSocket;
-  Socket? _screenSocket;
-  Uint8List? _screenFrame;
-  Uint8List? _pendingScreenFrame;
-  Timer? _screenRenderCooldown;
-  List<int> _screenBuffer = [];
-  bool _screenHandshakeDone = false;
   bool _fileTransferActive = false;
   double? _fileTransferProgress;
   late final stt.SpeechToText _speech;
@@ -174,11 +185,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   static const double _trackpadAccelerationReferenceMicros = 16000;
   DateTime _lastTwoFingerNavTime = DateTime.fromMillisecondsSinceEpoch(0);
   bool _trackpadDragging = false;
-  static const int _audioPort = 8081;
   bool _autoConnectInFlight = false;
   DateTime? _lastAutoConnectAt;
   List<_DiscoveredPc> _discoveredPcs = const [];
   List<_PcRequestFile> _requestFiles = const [];
+  final WebRtcMediaServiceBridge _mediaService =
+      WebRtcMediaServiceBridge.instance;
+  final WebRtcMirrorSystemUi _mirrorSystemUi = WebRtcMirrorSystemUi();
+  WebRtcMediaEngine? _mediaEngine;
+  FlutterWebRtcVideoRenderer? _videoRenderer;
+  WebRtcMirrorLifecycle? _mirrorLifecycle;
+  StreamSubscription<MediaState>? _mediaStateSubscription;
+  StreamSubscription<WebRtcVideoRenderState>? _videoStateSubscription;
+  StreamSubscription<WebRtcMediaCommand>? _mediaCommandSubscription;
+  MediaState _mediaState = const MediaState();
+  WebRtcVideoRenderState _videoRenderState = const WebRtcVideoRenderState();
+  AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
+  Future<void> _mediaRuntimeSerial = Future<void>.value();
+  String? _mediaContextKey;
+  bool _disposing = false;
 
   bool get _isTrusted =>
       _deviceId.isNotEmpty && _deviceToken.isNotEmpty && _pcId.isNotEmpty;
@@ -189,22 +214,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _speech = stt.SpeechToText();
     _prefs.setMethodCallHandler(_handleNativeCall);
+    _mediaCommandSubscription =
+        _mediaService.commands.listen(_handleMediaServiceCommand);
     unawaited(_requestMicrophonePermission());
     _bootstrap();
   }
 
   @override
   void dispose() {
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]);
+    _disposing = true;
     WidgetsBinding.instance.removeObserver(this);
     _speech.stop();
-    _prefs.invokeMethod('stopAudioReceiver');
     _controlSocket?.destroy();
-    _screenSocket?.destroy();
-    _screenRenderCooldown?.cancel();
+    unawaited(_mediaCommandSubscription?.cancel());
+    unawaited(_mirrorSystemUi.exit());
+    unawaited(_disposeMediaRuntime());
     _baseUrlController.dispose();
     _pairingTokenController.dispose();
     _urlController.dispose();
@@ -230,6 +254,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+    _appLifecycleState = state;
+    final lifecycle = _mirrorLifecycle;
+    if (lifecycle != null) {
+      unawaited(
+        _queueMediaRuntime(() => lifecycle.setAppLifecycleState(state)),
+      );
+    }
     if (state == AppLifecycleState.resumed) {
       unawaited(_autoConnectToTrustedPc());
     }
@@ -239,6 +270,169 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final status = await Permission.microphone.status;
     if (!status.isGranted) {
       await Permission.microphone.request();
+    }
+  }
+
+  void _handleMediaServiceCommand(WebRtcMediaCommand command) {
+    switch (command) {
+      case WebRtcMediaCommand.play:
+        unawaited(_startAudio());
+      case WebRtcMediaCommand.pause:
+      case WebRtcMediaCommand.stop:
+        unawaited(_stopAudio());
+    }
+  }
+
+  Future<void> _queueMediaRuntime(Future<void> Function() action) {
+    final next = _mediaRuntimeSerial.then((_) => action());
+    _mediaRuntimeSerial =
+        next.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return next;
+  }
+
+  Future<WebRtcMediaEngine> _ensureMediaRuntimeInternal() async {
+    if (!_isTrusted) throw StateError('Trust this phone first');
+    final baseUri = Uri.tryParse(_normalizedBaseUrl());
+    if (baseUri == null || baseUri.host.isEmpty) {
+      throw StateError('PC address is invalid');
+    }
+
+    final contextKey = '${baseUri.toString()}|$_pcId|$_deviceId|$_deviceToken';
+    final current = _mediaEngine;
+    if (current != null && _mediaContextKey == contextKey) return current;
+
+    final resumeAudio = current?.state.audioRequested ?? _audioEnabled;
+    final resumeMirror = _tabIndex == _mirrorTab &&
+        _appLifecycleState == AppLifecycleState.resumed;
+    await _disposeMediaRuntimeInternal(
+      stopService: !resumeAudio,
+      resetUi: false,
+    );
+
+    final renderer = FlutterWebRtcVideoRenderer();
+    final engine = WebRtcMediaEngine(videoPlayback: renderer);
+    final lifecycle = WebRtcMirrorLifecycle(engine: engine);
+    _mediaEngine = engine;
+    _videoRenderer = renderer;
+    _mirrorLifecycle = lifecycle;
+    _mediaContextKey = contextKey;
+    _mediaState = engine.state;
+    _videoRenderState = renderer.state;
+    _mediaStateSubscription = engine.states.listen(_handleMediaState);
+    _videoStateSubscription = renderer.states.listen(_handleVideoRenderState);
+
+    try {
+      await engine.initialize(
+        TrustedPcMediaContext(
+          baseUri: baseUri,
+          deviceId: _deviceId,
+          deviceToken: _deviceToken,
+        ),
+      );
+      if (_appLifecycleState != AppLifecycleState.resumed) {
+        await lifecycle.setAppLifecycleState(_appLifecycleState);
+      }
+      if (resumeAudio) await engine.startAudio();
+      if (resumeMirror) await lifecycle.setVisible(true);
+      if (mounted && !_disposing) setState(() {});
+      return engine;
+    } catch (_) {
+      await _disposeMediaRuntimeInternal();
+      rethrow;
+    }
+  }
+
+  void _handleMediaState(MediaState state) {
+    _mediaState = state;
+    if (!mounted || _disposing) return;
+    setState(() {
+      _audioEnabled = state.audioRequested;
+      _audioStatus = switch (state.audioPhase) {
+        MediaTrackPhase.on => 'PC audio on',
+        MediaTrackPhase.starting => 'Connecting PC audio',
+        MediaTrackPhase.stopping => 'Stopping PC audio',
+        MediaTrackPhase.failed => _mediaFailureStatus(
+            'PC audio reconnecting',
+            state.error,
+          ),
+        MediaTrackPhase.off =>
+          state.audioRequested ? 'Connecting PC audio' : 'PC audio off',
+      };
+      if (state.videoPhase == MediaTrackPhase.failed) {
+        _mirrorStatus = 'Mirror reconnecting';
+      } else if (state.videoRequested) {
+        _mirrorStatus = state.videoPhase == MediaTrackPhase.on
+            ? 'Mirror receiving'
+            : 'Connecting mirror';
+      } else {
+        _mirrorStatus = 'Mirror disconnected';
+      }
+    });
+  }
+
+  void _handleVideoRenderState(WebRtcVideoRenderState state) {
+    _videoRenderState = state;
+    if (!mounted || _disposing) return;
+    setState(() {
+      if (state.hasFrame) _mirrorStatus = 'Mirror receiving';
+    });
+  }
+
+  String _mediaFailureStatus(String label, String? error) {
+    final detail =
+        error?.replaceFirst(RegExp(r'^(Exception|Bad state):\s*'), '').trim();
+    if (detail == null || detail.isEmpty) return label;
+    return '$label: $detail';
+  }
+
+  Future<void> _reconfigureMediaRuntime() {
+    return _queueMediaRuntime(() async {
+      if (_mediaEngine == null) return;
+      await _ensureMediaRuntimeInternal();
+    });
+  }
+
+  Future<void> _disposeMediaRuntime() {
+    return _queueMediaRuntime(_disposeMediaRuntimeInternal);
+  }
+
+  Future<void> _disposeMediaRuntimeInternal({
+    bool stopService = true,
+    bool resetUi = true,
+  }) async {
+    final mediaStateSubscription = _mediaStateSubscription;
+    final videoStateSubscription = _videoStateSubscription;
+    final lifecycle = _mirrorLifecycle;
+    final engine = _mediaEngine;
+    _mediaStateSubscription = null;
+    _videoStateSubscription = null;
+    _mirrorLifecycle = null;
+    _mediaEngine = null;
+    _videoRenderer = null;
+    _mediaContextKey = null;
+
+    await mediaStateSubscription?.cancel();
+    await videoStateSubscription?.cancel();
+    try {
+      await engine?.dispose();
+    } catch (_) {}
+    try {
+      await lifecycle?.dispose();
+    } catch (_) {}
+    if (stopService) {
+      try {
+        await _mediaService.stop();
+      } catch (_) {}
+    }
+
+    _mediaState = const MediaState();
+    _videoRenderState = const WebRtcVideoRenderState();
+    if (resetUi && mounted && !_disposing) {
+      setState(() {
+        _audioEnabled = false;
+        _audioStatus = 'PC audio off';
+        _mirrorStatus = 'Mirror disconnected';
+      });
     }
   }
 
@@ -350,11 +544,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       'pcId': _pcId,
       'quickAction': _quickAction,
     });
+    if (_mediaEngine != null) unawaited(_reconfigureMediaRuntime());
     if (showStatus && mounted) setState(() => _status = 'Config saved');
   }
 
   Future<void> _clearTrust() async {
     await _run('Clearing trust', () async {
+      await _disposeMediaRuntime();
       _disconnectRemote();
       setState(() {
         _deviceToken = '';
@@ -498,6 +694,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             _remoteStatus = 'Remote address updated';
           });
         }
+      }
+      if (addressChanged && _mediaEngine != null) {
+        unawaited(_reconfigureMediaRuntime());
       }
 
       if (!_remoteConnected) {
@@ -763,25 +962,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _disconnectRemote() {
-    if (_mirrorConnected) {
-      _disconnectMirror();
-    }
-    if (_audioEnabled) {
-      _sendRawControl({
-        'type': 'AUDIO_TOGGLE',
-        'enabled': false,
-        'port': _audioPort,
-      });
-      _prefs.invokeMethod('stopAudioReceiver');
-    }
     _controlSocket?.destroy();
     _controlSocket = null;
     setState(() {
       _remoteConnected = false;
-      _audioEnabled = false;
       _trustedConnectNoticeShown = false;
       _remoteStatus = 'Remote disconnected';
-      _audioStatus = 'PC audio off';
     });
   }
 
@@ -1100,50 +1286,75 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _refreshAudio() async {
-    if (!_remoteConnected || _controlSocket == null) {
-      setState(() => _audioStatus = 'Connect remote first');
+    if (!_isTrusted) {
+      setState(() => _audioStatus = 'Trust this phone first');
       return;
     }
     setState(() => _audioStatus = 'Refreshing PC audio');
-    await _stopAudio();
-    await Future<void>.delayed(const Duration(milliseconds: 180));
-    await _startAudio();
+    try {
+      await _queueMediaRuntime(() async {
+        final engine = await _ensureMediaRuntimeInternal();
+        if (engine.state.audioRequested) await engine.stopAudio();
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        await engine.startAudio();
+      });
+    } catch (error) {
+      if (mounted) setState(() => _audioStatus = 'Audio failed: $error');
+    }
   }
 
   Future<void> _startAudio() async {
-    if (!_remoteConnected || _controlSocket == null) {
-      setState(() => _audioStatus = 'Connect remote first');
+    if (!_isTrusted) {
+      setState(() => _audioStatus = 'Trust this phone first');
       return;
     }
+    if (_audioEnabled) return;
+    setState(() {
+      _audioEnabled = true;
+      _audioStatus = 'Connecting PC audio';
+    });
     try {
-      await _prefs.invokeMethod('startAudioReceiver', {'port': _audioPort});
-      _sendRemoteCommand({
-        'type': 'AUDIO_TOGGLE',
-        'enabled': true,
-        'port': _audioPort,
-      });
-      setState(() {
-        _audioEnabled = true;
-        _audioStatus = 'PC audio on';
+      await _mediaService.start(title: 'PC Audio', playing: true);
+      await _queueMediaRuntime(() async {
+        final engine = await _ensureMediaRuntimeInternal();
+        await engine.startAudio();
       });
     } catch (error) {
-      setState(() => _audioStatus = 'Audio failed: $error');
+      try {
+        await _mediaService.stop();
+      } catch (_) {}
+      if (mounted) {
+        setState(() {
+          _audioEnabled = false;
+          _audioStatus = 'Audio failed: $error';
+        });
+      }
     }
   }
 
   Future<void> _stopAudio() async {
-    if (_remoteConnected && _controlSocket != null) {
-      _sendRemoteCommand({
-        'type': 'AUDIO_TOGGLE',
-        'enabled': false,
-        'port': _audioPort,
+    if (mounted) setState(() => _audioStatus = 'Stopping PC audio');
+    try {
+      await _queueMediaRuntime(() async {
+        final engine = _mediaEngine;
+        if (engine?.state.audioRequested == true) {
+          await engine!.stopAudio();
+        }
+        if (engine != null && !engine.state.videoRequested) {
+          await _disposeMediaRuntimeInternal(stopService: false);
+        }
       });
+    } finally {
+      try {
+        await _mediaService.stop();
+      } catch (_) {}
+      if (mounted) {
+        setState(() {
+          _audioEnabled = false;
+          _audioStatus = 'PC audio off';
+        });
+      }
     }
-    await _prefs.invokeMethod('stopAudioReceiver');
-    setState(() {
-      _audioEnabled = false;
-      _audioStatus = 'PC audio off';
-    });
   }
 
   void _sendMediaAction(String action) {
@@ -1181,157 +1392,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
-  Future<void> _connectMirror() async {
-    if (!_isTrusted) {
-      setState(() => _mirrorStatus = 'Trust this phone first');
-      return;
-    }
-    if (!_remoteConnected) {
-      await _connectRemote();
-    }
-    if (!_remoteConnected) {
-      setState(() => _mirrorStatus = 'Remote control is required');
-      return;
-    }
-
-    final uri = Uri.tryParse(_normalizedBaseUrl());
-    final host = uri?.host ?? '';
-    if (host.isEmpty) {
-      setState(() => _mirrorStatus = 'PC address is invalid');
-      return;
-    }
-
-    setState(() => _mirrorStatus = 'Connecting mirror');
-    try {
-      final socket =
-          await Socket.connect(host, 8082, timeout: const Duration(seconds: 5));
-      socket.setOption(SocketOption.tcpNoDelay, true);
-      _screenSocket?.destroy();
-      _screenSocket = socket;
-      _screenBuffer = [];
-      _screenFrame = null;
-      _pendingScreenFrame = null;
-      _screenRenderCooldown?.cancel();
-      _screenRenderCooldown = null;
-      _screenHandshakeDone = false;
-      socket.listen(
-        _handleScreenData,
-        onDone: _markMirrorDisconnected,
-        onError: (Object error) {
-          if (mounted) {
-            setState(() {
-              _mirrorConnected = false;
-              _mirrorStatus = 'Mirror error: $error';
-            });
-          }
-        },
-        cancelOnError: true,
-      );
-      socket.write('${jsonEncode({
-            'type': 'auth',
-            'device_id': _deviceId,
-            'device_token': _deviceToken,
-          })}\n');
-      setState(() {
-        _mirrorConnected = true;
-        _mirrorStatus = 'Mirror connected';
-      });
-    } catch (error) {
-      setState(() {
-        _mirrorConnected = false;
-        _mirrorStatus = 'Mirror connect failed: $error';
-      });
-    }
-  }
-
-  void _disconnectMirror() {
-    _screenSocket?.destroy();
-    _screenSocket = null;
-    _screenBuffer = [];
-    _screenFrame = null;
-    _pendingScreenFrame = null;
-    _screenRenderCooldown?.cancel();
-    _screenRenderCooldown = null;
-    _screenHandshakeDone = false;
-    setState(() {
-      _mirrorConnected = false;
-      _mirrorStatus = 'Mirror disconnected';
-    });
-  }
-
-  void _markMirrorDisconnected() {
-    if (!mounted) return;
-    setState(() {
-      _mirrorConnected = false;
-      _mirrorStatus = 'Mirror disconnected';
-    });
-  }
-
-  void _handleScreenData(Uint8List chunk) {
-    _screenBuffer.addAll(chunk);
-    Uint8List? latestFrame;
-
-    if (!_screenHandshakeDone) {
-      final newline = _screenBuffer.indexOf(10);
-      if (newline < 0) return;
-
-      final line = utf8.decode(_screenBuffer.sublist(0, newline));
-      _screenBuffer = _screenBuffer.sublist(newline + 1);
-      final message = jsonDecode(line) as Map<String, dynamic>;
-      if (message['ok'] == false) {
-        setState(() =>
-            _mirrorStatus = message['error']?.toString() ?? 'Mirror denied');
-        _disconnectMirror();
-        return;
-      }
-      _screenHandshakeDone = true;
-    }
-
-    while (_screenBuffer.length >= 4) {
-      final length = (_screenBuffer[0] << 24) |
-          (_screenBuffer[1] << 16) |
-          (_screenBuffer[2] << 8) |
-          _screenBuffer[3];
-      if (length <= 0 || length > 5 * 1024 * 1024) {
-        setState(() => _mirrorStatus = 'Invalid screen frame');
-        _disconnectMirror();
-        return;
-      }
-      if (_screenBuffer.length < length + 4) return;
-
-      latestFrame = Uint8List.fromList(_screenBuffer.sublist(4, length + 4));
-      _screenBuffer = _screenBuffer.sublist(length + 4);
-    }
-
-    if (latestFrame != null) {
-      _queueScreenFrame(latestFrame);
-    }
-  }
-
-  void _queueScreenFrame(Uint8List frame) {
-    _pendingScreenFrame = frame;
-    if (_screenRenderCooldown?.isActive == true) return;
-    _paintQueuedScreenFrame();
-  }
-
-  void _paintQueuedScreenFrame() {
-    final frame = _pendingScreenFrame;
-    if (frame == null || !mounted || !_mirrorConnected) return;
-
-    _pendingScreenFrame = null;
-    setState(() {
-      _screenFrame = frame;
-      _mirrorStatus = 'Mirror receiving';
-    });
-
-    _screenRenderCooldown = Timer(const Duration(milliseconds: 42), () {
-      _screenRenderCooldown = null;
-      if (_pendingScreenFrame != null) {
-        _paintQueuedScreenFrame();
-      }
-    });
-  }
-
   Future<void> _setTabIndex(int index) async {
     if (index < _actionsTab || index > _connectTab) return;
 
@@ -1340,22 +1400,40 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     if (index == _mirrorTab) {
-      await SystemChrome.setPreferredOrientations([
-        DeviceOrientation.landscapeRight,
-        DeviceOrientation.landscapeLeft,
-      ]);
-      setState(() => _tabIndex = index);
-      if (!_mirrorConnected) {
-        unawaited(_connectMirror());
+      if (!_isTrusted) {
+        setState(() {
+          _mirrorStatus = 'Trust this phone first';
+          _tabIndex = _connectTab;
+        });
+        return;
       }
+      await _mirrorSystemUi.enter();
+      setState(() => _tabIndex = index);
+      setState(() => _mirrorStatus = 'Connecting mirror');
+      unawaited(
+        _queueMediaRuntime(() async {
+          try {
+            await _ensureMediaRuntimeInternal();
+            await _mirrorLifecycle?.setVisible(true);
+          } catch (error) {
+            if (mounted) {
+              setState(() => _mirrorStatus = 'Mirror failed: $error');
+            }
+          }
+        }),
+      );
       return;
     }
 
     if (_tabIndex == _mirrorTab) {
-      await SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-        DeviceOrientation.portraitDown,
-      ]);
+      await _queueMediaRuntime(() async {
+        await _mirrorLifecycle?.setVisible(false);
+        final engine = _mediaEngine;
+        if (engine != null && !engine.state.audioRequested) {
+          await _disposeMediaRuntimeInternal(stopService: false);
+        }
+      });
+      await _mirrorSystemUi.exit();
     }
     setState(() => _tabIndex = index);
   }
@@ -1523,7 +1601,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _buildGlobalAudioControl() {
     return Positioned(
       top: 12,
-      right: 12,
+      right: _tabIndex == _mirrorTab ? 180 : 12,
       child: SafeArea(
         child: Material(
           color: Colors.transparent,
@@ -1616,7 +1694,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       children: [
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: _remoteConnected
+                            onPressed: _isTrusted
                                 ? () => unawaited(_refreshAudio())
                                 : null,
                             icon: const Icon(Icons.sync_rounded),
@@ -1696,7 +1774,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _exitMirrorPage() async {
-    _disconnectMirror();
     await _setTabIndex(_actionsTab);
   }
 
@@ -2365,17 +2442,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               Row(
                 children: [
                   Icon(
-                    _remoteConnected ? Icons.wifi : Icons.wifi_off,
-                    color: _remoteConnected ? _successSoft : _dangerSoft,
+                    _isTrusted ? Icons.verified_rounded : Icons.wifi_off,
+                    color: _isTrusted ? _successSoft : _dangerSoft,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      _remoteConnected
-                          ? 'Remote connected'
-                          : 'Waiting for trusted PC',
+                      _isTrusted ? 'Trusted PC ready' : 'Trust a PC first',
                       style: TextStyle(
-                        color: _remoteConnected ? _successSoft : _mutedText,
+                        color: _isTrusted ? _successSoft : _mutedText,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -2397,7 +2472,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: _remoteConnected ? _toggleAudio : null,
+                  onPressed: _isTrusted ? _toggleAudio : null,
                   style: FilledButton.styleFrom(
                     backgroundColor: _audioEnabled ? _successSoft : _fieldFill,
                     foregroundColor: _audioEnabled ? Colors.black : _accentSoft,
@@ -2610,103 +2685,57 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildMirrorPage() {
-    return Stack(
-      children: [
-        Center(
-          child: _screenFrame == null
-              ? Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const CircularProgressIndicator(color: Color(0xFFEF4444)),
-                    const SizedBox(height: 16),
-                    Text(
-                      _mirrorStatus,
-                      style: const TextStyle(color: Colors.white70),
-                    ),
-                  ],
-                )
-              : AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: Container(
-                    width: double.infinity,
-                    height: double.infinity,
-                    color: Colors.black,
-                    child: Image.memory(
-                      _screenFrame!,
-                      gaplessPlayback: true,
-                      filterQuality: FilterQuality.low,
-                      fit: BoxFit.fill,
-                    ),
+    final renderer = _videoRenderer;
+    if (renderer == null) {
+      return ColoredBox(
+        color: Colors.black,
+        child: Stack(
+          children: [
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(color: Color(0xFFEF4444)),
+                  const SizedBox(height: 16),
+                  Text(
+                    _mirrorStatus,
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              top: 20,
+              left: 20,
+              child: SafeArea(
+                child: DecoratedBox(
+                  decoration: const BoxDecoration(
+                    color: Colors.black54,
+                    shape: BoxShape.circle,
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    onPressed: () => unawaited(_exitMirrorPage()),
                   ),
                 ),
-        ),
-        Positioned(
-          top: 20,
-          left: 20,
-          child: SafeArea(
-            child: DecoratedBox(
-              decoration: const BoxDecoration(
-                color: Colors.black54,
-                shape: BoxShape.circle,
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.white),
-                onPressed: () => unawaited(_exitMirrorPage()),
               ),
             ),
-          ),
+          ],
         ),
-        Positioned(
-          top: 20,
-          right: 20,
-          child: SafeArea(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.54),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _mirrorConnected
-                          ? Icons.screenshot_monitor_rounded
-                          : Icons.sync_problem_rounded,
-                      color: _mirrorConnected ? _successSoft : _dangerSoft,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _mirrorConnected ? 'Mirror' : _mirrorStatus,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      onPressed:
-                          _mirrorConnected ? _disconnectMirror : _connectMirror,
-                      icon: Icon(
-                        _mirrorConnected
-                            ? Icons.stop_rounded
-                            : Icons.play_arrow_rounded,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
+      );
+    }
+
+    return WebRtcMirrorView(
+      renderer: renderer.renderer,
+      renderState: _videoRenderState,
+      mediaState: _mediaState,
+      onExit: () => unawaited(_exitMirrorPage()),
+      onRetry: () {
+        final lifecycle = _mirrorLifecycle;
+        if (lifecycle != null) {
+          unawaited(_queueMediaRuntime(lifecycle.retry));
+        }
+      },
     );
   }
 }
