@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -27,6 +28,12 @@ class WebRtcMediaService : Service() {
         super.onCreate()
         createNotificationChannel()
         mediaSession = MediaSession(this, MEDIA_SESSION_TAG).apply {
+            setPlaybackToLocal(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_UNKNOWN)
+                    .build(),
+            )
             setCallback(object : MediaSession.Callback() {
                 override fun onPlay() = dispatch(COMMAND_PLAY)
 

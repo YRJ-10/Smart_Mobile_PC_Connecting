@@ -48,7 +48,7 @@ void main() {
       },
       {'sequence': 2, 'kind': 'answer', 'sdp': 'pc-answer'},
     ]);
-    await eventually(() => peers.first.remoteAnswer == 'pc-answer');
+    await eventually(() => peers.first.remoteAnswer == 'pc-answer\r\n');
     expect(peers.first.remoteCandidates.single.candidate, 'pc-candidate');
 
     peers.first.emitState(WebRtcPeerState.connected);

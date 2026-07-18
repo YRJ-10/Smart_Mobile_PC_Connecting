@@ -8,9 +8,11 @@ test("system audio capture is shared and stops after its last session", async ()
   const sourceVideo = new FakeTrack("video", "source-video");
   const stream = new FakeStream([sourceAudio, sourceVideo]);
   let displayRequests = 0;
+  let requestedConstraints = null;
   const capture = new SystemAudioCapture({
-    getDisplayMedia: async () => {
+    getDisplayMedia: async (constraints) => {
       displayRequests += 1;
+      requestedConstraints = constraints;
       return stream;
     }
   });
@@ -21,6 +23,13 @@ test("system audio capture is shared and stops after its last session", async ()
   ]);
 
   assert.equal(displayRequests, 1);
+  assert.deepEqual(requestedConstraints.audio, {
+    autoGainControl: false,
+    echoCancellation: false,
+    latency: { ideal: 0.01, max: 0.02 },
+    noiseSuppression: false,
+    sampleRate: { ideal: 48000 }
+  });
   assert.equal(sourceVideo.stopped, true);
   assert.equal(first.contentHint, "music");
   assert.equal(second.contentHint, "music");

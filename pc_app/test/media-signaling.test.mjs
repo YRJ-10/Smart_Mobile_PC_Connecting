@@ -54,6 +54,7 @@ test("client signals are validated, sequenced, and isolated by owner", () => {
     sdp: "v=0"
   });
   assert.equal(signal.sequence, 1);
+  assert.equal(signal.sdp, "v=0\r\n");
   assert.equal(signaling.takeClientSignals(session.session_id).length, 1);
   assert.throws(
     () => signaling.enqueueClientSignal("phone-2", session.session_id, {
@@ -62,6 +63,25 @@ test("client signals are validated, sequenced, and isolated by owner", () => {
     }),
     (error) => error instanceof MediaSignalingError && error.status === 404
   );
+});
+
+test("SDP line endings are normalized and retain the required terminator", () => {
+  const signaling = readySignaling();
+  const session = signaling.createSession("phone-1", {
+    tracks: { audio: true }
+  });
+
+  const offer = signaling.enqueueClientSignal("phone-1", session.session_id, {
+    kind: "offer",
+    sdp: "v=0\ns=-\n"
+  });
+  assert.equal(offer.sdp, "v=0\r\ns=-\r\n");
+
+  const answer = signaling.publishServerSignal(session.session_id, {
+    kind: "answer",
+    sdp: "v=0\r\ns=-"
+  });
+  assert.equal(answer.sdp, "v=0\r\ns=-\r\n");
 });
 
 test("server signals wake a pending long poll and preserve sequence", async () => {

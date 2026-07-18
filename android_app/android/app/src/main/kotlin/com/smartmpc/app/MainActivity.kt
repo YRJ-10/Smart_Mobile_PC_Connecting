@@ -3,6 +3,7 @@ package com.smartmpc.app
 import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -29,6 +30,7 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         latestDeepLink = deepLinkFrom(intent)
         super.onCreate(savedInstanceState)
+        volumeControlStream = AudioManager.STREAM_MUSIC
     }
 
     override fun getRenderMode(): RenderMode {

@@ -60,7 +60,6 @@ class FlutterWebRtcVideoRenderer implements WebRtcVideoPlayback {
     _ensureNotDisposed();
     if (_initialized) return;
     await renderer.initialize();
-    renderer.muted = true;
     renderer.onFirstFrameRendered = _handleFirstFrame;
     renderer.onResize = _handleResize;
     _initialized = true;

@@ -80,20 +80,32 @@ async function runProbe() {
           timeout(probe.connectedPromise, "Audio peer connection")
         ]);
         const settings = track.getSettings();
+        const opusPayload = answer.match(
+          /^a=rtpmap:(\\d+) opus\\/48000/im
+        )?.[1];
         return {
           connected: probe.peer.connectionState === "connected",
           remoteAudioTrack: track.kind === "audio" && track.readyState === "live",
           answerHasOpus48k: /a=rtpmap:\\d+ opus\\/48000/i.test(answer),
+          packetTimeMs: Number(
+            answer.match(/^a=ptime:(\\d+)/im)?.[1] ?? 0
+          ),
+          opusFmtp: opusPayload
+            ? answer.match(
+                new RegExp("^a=fmtp:" + opusPayload + " (.+)$", "im")
+              )?.[1] ?? ""
+            : "",
           trackSettings: settings
         };
       })()
     `, true);
 
+    const workerAudio = worker.state().audio;
     await receiverWindow.webContents.executeJavaScript(`
       window.smartMpcAudioProbe?.peer.close()
     `, true);
     await worker.closeSession(SESSION_ID);
-    return result;
+    return { ...result, workerAudio };
   } finally {
     await worker.stop().catch(() => {});
     if (!receiverWindow.isDestroyed()) receiverWindow.destroy();
@@ -161,8 +173,15 @@ app.whenReady().then(async () => {
   try {
     const result = await runProbe();
     process.stdout.write(`${JSON.stringify(result)}\n`);
+    const captureSettings = result.workerAudio?.settings ?? {};
     app.exit(
-      result.connected && result.remoteAudioTrack && result.answerHasOpus48k
+      result.connected &&
+        result.remoteAudioTrack &&
+        result.answerHasOpus48k &&
+        result.packetTimeMs === 10 &&
+        captureSettings.autoGainControl === false &&
+        captureSettings.echoCancellation === false &&
+        captureSettings.noiseSuppression === false
         ? 0
         : 1
     );

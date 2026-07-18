@@ -23,8 +23,8 @@ async function runProbe() {
     const offerSdp = await receiverWindow.webContents.executeJavaScript(`
       (async () => {
         const peer = new RTCPeerConnection({ iceServers: [] });
-        const trackPromise = new Promise((resolve) => {
-          peer.ontrack = (event) => resolve(event.track);
+        const trackEventPromise = new Promise((resolve) => {
+          peer.ontrack = resolve;
         });
         const connectedPromise = new Promise((resolve, reject) => {
           peer.onconnectionstatechange = () => {
@@ -44,7 +44,11 @@ async function runProbe() {
             };
           });
         }
-        window.smartMpcVideoProbe = { peer, trackPromise, connectedPromise };
+        window.smartMpcVideoProbe = {
+          peer,
+          trackEventPromise,
+          connectedPromise
+        };
         return peer.localDescription.sdp;
       })()
     `, true);
@@ -77,16 +81,20 @@ async function runProbe() {
         for (const candidate of candidates) {
           await probe.peer.addIceCandidate(candidate);
         }
-        const [track] = await Promise.all([
-          timeout(probe.trackPromise, "Remote desktop video track"),
+        const [trackEvent] = await Promise.all([
+          timeout(probe.trackEventPromise, "Remote desktop video track"),
           timeout(probe.connectedPromise, "Video peer connection")
         ]);
+        const track = trackEvent.track;
+        if (!trackEvent.streams.length) {
+          throw new Error("Remote desktop video track has no MediaStream");
+        }
 
         const video = document.createElement("video");
         video.autoplay = true;
         video.muted = true;
         video.playsInline = true;
-        video.srcObject = new MediaStream([track]);
+        video.srcObject = trackEvent.streams[0];
         document.body.append(video);
         await video.play();
 
@@ -123,6 +131,7 @@ async function runProbe() {
         return {
           connected: probe.peer.connectionState === "connected",
           remoteVideoTrack: track.kind === "video" && track.readyState === "live",
+          remoteVideoStream: trackEvent.streams.length > 0,
           decodedFrame: decoded.framesDecoded > 0,
           codec: decoded.codec,
           width: decoded.width,
@@ -208,6 +217,7 @@ app.whenReady().then(async () => {
     app.exit(
       result.connected &&
         result.remoteVideoTrack &&
+        result.remoteVideoStream &&
         result.decodedFrame &&
         result.width >= 1280 &&
         (codec === "video/h264" || codec === "video/vp8") &&

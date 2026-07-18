@@ -267,7 +267,7 @@ function normalizeSignal(signal, allowedKinds) {
   if (!allowedKinds.has(kind)) throw new MediaSignalingError("Unsupported signal kind");
 
   if (kind === "offer" || kind === "answer") {
-    return { kind, sdp: requiredText(signal.sdp, "sdp", 1024 * 1024) };
+    return { kind, sdp: requiredSdp(signal.sdp, 1024 * 1024) };
   }
   if (kind === "ice-candidate") {
     return {
@@ -297,6 +297,19 @@ function requiredText(value, name, maxLength) {
   if (!text) throw new MediaSignalingError(`Missing ${name}`);
   if (text.length > maxLength) throw new MediaSignalingError(`${name} is too large`, 413);
   return text;
+}
+
+function requiredSdp(value, maxLength) {
+  const text = String(value ?? "");
+  if (!text.trim()) throw new MediaSignalingError("Missing sdp");
+  const normalized = text.replace(/\r\n|\r|\n/g, "\r\n");
+  const terminated = normalized.endsWith("\r\n")
+    ? normalized
+    : `${normalized}\r\n`;
+  if (terminated.length > maxLength) {
+    throw new MediaSignalingError("sdp is too large", 413);
+  }
+  return terminated;
 }
 
 function optionalText(value, maxLength) {

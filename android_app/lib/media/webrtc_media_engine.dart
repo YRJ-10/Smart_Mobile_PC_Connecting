@@ -381,7 +381,7 @@ class WebRtcMediaEngine implements MediaEngine {
   Future<void> _applyServerSignal(Map<String, dynamic> signal) async {
     final kind = signal['kind']?.toString();
     if (kind == 'answer') {
-      final sdp = _requiredText(signal, 'sdp');
+      final sdp = _requiredSdp(signal);
       await _peer!.setRemoteAnswer(sdp);
       _remoteDescriptionSet = true;
       for (final candidate in _pendingRemoteCandidates) {
@@ -713,4 +713,13 @@ String _requiredText(Map<String, dynamic> source, String key) {
   final value = source[key]?.toString().trim() ?? '';
   if (value.isEmpty) throw FormatException('Missing signaling field: $key');
   return value;
+}
+
+String _requiredSdp(Map<String, dynamic> source) {
+  final value = source['sdp']?.toString() ?? '';
+  if (value.trim().isEmpty) {
+    throw const FormatException('Missing signaling field: sdp');
+  }
+  final normalized = value.replaceAll(RegExp(r'\r\n|\r|\n'), '\r\n');
+  return normalized.endsWith('\r\n') ? normalized : '$normalized\r\n';
 }

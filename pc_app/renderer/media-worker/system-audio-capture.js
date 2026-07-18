@@ -62,7 +62,13 @@ export class SystemAudioCapture {
 
   async #startSource() {
     const stream = await this.getDisplayMedia({
-      audio: true,
+      audio: {
+        autoGainControl: false,
+        echoCancellation: false,
+        latency: { ideal: 0.01, max: 0.02 },
+        noiseSuppression: false,
+        sampleRate: { ideal: 48000 }
+      },
       video: {
         width: { max: 2 },
         height: { max: 2 },

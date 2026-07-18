@@ -1,5 +1,6 @@
 import { SystemAudioCapture } from "./system-audio-capture.js";
 import { ScreenVideoCapture } from "./screen-video-capture.js";
+import { applyAudioPacketTime } from "./sdp.js";
 
 const bridge = window.smartMpcMediaWorker;
 const sessions = new Map();
@@ -91,6 +92,7 @@ async function openSession(session) {
     tracks: session.tracks,
     audioTrack: null,
     videoTrack: null,
+    videoStream: null,
     videoSender: null,
     videoEncoding: null,
     closed: false,
@@ -122,7 +124,13 @@ async function handleSignal(sessionId, signal) {
     }
     if (!isActiveSession(sessionId, session)) return;
     const answer = await session.peer.createAnswer();
-    await session.peer.setLocalDescription(answer);
+    const localAnswer = session.tracks.audio
+      ? {
+          type: answer.type,
+          sdp: applyAudioPacketTime(answer.sdp, 10)
+        }
+      : answer;
+    await session.peer.setLocalDescription(localAnswer);
     if (!isActiveSession(sessionId, session)) return;
     if (session.videoTrack && session.videoSender) {
       session.videoEncoding = await configureVideoSender(
@@ -174,6 +182,7 @@ function closeSession(sessionId) {
   screenVideo.release(sessionId);
   session.audioTrack = null;
   session.videoTrack = null;
+  session.videoStream = null;
   session.videoSender = null;
   session.videoEncoding = null;
   sessions.delete(sessionId);
@@ -229,7 +238,10 @@ async function attachScreenVideo(sessionId, session) {
     return false;
   }
   session.videoTrack = track;
+  const stream = new MediaStream([track]);
   await transceiver.sender.replaceTrack(track);
+  transceiver.sender.setStreams(stream);
+  session.videoStream = stream;
   transceiver.direction = "sendonly";
   configureVideoCodecs(transceiver);
   session.videoSender = transceiver.sender;

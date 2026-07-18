@@ -5,6 +5,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
@@ -27,7 +28,15 @@ const _warningSoft = Color(0xFFE2B978);
 const _dangerSoft = Color(0xFFD87A7A);
 const _mutedText = Color(0xFF9AA8AF);
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (Platform.isAndroid) {
+    await WebRTC.initialize(
+      options: <String, dynamic>{
+        'androidAudioConfiguration': AndroidAudioConfiguration.media.toMap(),
+      },
+    );
+  }
   runApp(const SmartMpcApp());
 }
 
@@ -342,7 +351,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         MediaTrackPhase.on => 'PC audio on',
         MediaTrackPhase.starting => 'Connecting PC audio',
         MediaTrackPhase.stopping => 'Stopping PC audio',
-        MediaTrackPhase.failed => 'PC audio reconnecting',
+        MediaTrackPhase.failed => _mediaFailureStatus(
+            'PC audio reconnecting',
+            state.error,
+          ),
         MediaTrackPhase.off =>
           state.audioRequested ? 'Connecting PC audio' : 'PC audio off',
       };
@@ -364,6 +376,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() {
       if (state.hasFrame) _mirrorStatus = 'Mirror receiving';
     });
+  }
+
+  String _mediaFailureStatus(String label, String? error) {
+    final detail =
+        error?.replaceFirst(RegExp(r'^(Exception|Bad state):\s*'), '').trim();
+    if (detail == null || detail.isEmpty) return label;
+    return '$label: $detail';
   }
 
   Future<void> _reconfigureMediaRuntime() {
