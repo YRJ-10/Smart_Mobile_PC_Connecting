@@ -4,6 +4,15 @@ import struct
 import sys
 import threading
 import time
+import ctypes
+
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)
+except Exception:
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
 
 try:
     import pyautogui
@@ -54,6 +63,7 @@ def execute_command(cmd):
     action_type = cmd.get("type")
     if action_type == "MOUSE_MOVE":
         require_pyautogui()
+        ctypes.windll.user32.mouse_event(0x0001, 0, 0, 0, 0)
         pyautogui.moveRel(float(cmd.get("dx", 0)), float(cmd.get("dy", 0)))
     elif action_type == "MOUSE_CLICK":
         require_pyautogui()
