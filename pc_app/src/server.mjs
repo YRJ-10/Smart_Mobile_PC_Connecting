@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import {
   copyFileSync,
+  createWriteStream,
   existsSync,
   readFileSync,
   readdirSync,
@@ -494,11 +495,28 @@ export class SmartMpcServer {
     if (req.method === "POST" && route === "/api/files") {
       try {
         const filename = requestUrl.searchParams.get("filename") ?? `upload-${Date.now()}.bin`;
-        const body = await readBody(req);
         const target = uniquePath(this.#config.inbox_dir, filename);
-        writeFileSync(target, body);
-        this.#requestLog.add("file_uploaded", { filename: parse(target).base, bytes: body.length });
-        sendJson(res, 200, { ok: true, saved_to: parse(target).base, bytes: body.length });
+        
+        await new Promise((resolve, reject) => {
+          const writeStream = createWriteStream(target);
+          let bytesWritten = 0;
+          
+          req.on("data", (chunk) => {
+            bytesWritten += chunk.length;
+          });
+          
+          req.pipe(writeStream);
+          
+          writeStream.on("finish", () => resolve(bytesWritten));
+          writeStream.on("error", reject);
+          req.on("error", (err) => {
+             writeStream.destroy();
+             reject(err);
+          });
+        }).then((bytes) => {
+          this.#requestLog.add("file_uploaded", { filename: parse(target).base, bytes });
+          sendJson(res, 200, { ok: true, saved_to: parse(target).base, bytes });
+        });
       } catch (error) {
         sendJson(res, 400, { ok: false, error: error.message });
       }
