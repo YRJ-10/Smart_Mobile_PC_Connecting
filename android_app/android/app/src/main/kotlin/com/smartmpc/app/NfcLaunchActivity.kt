@@ -298,6 +298,7 @@ class NfcLaunchActivity : Activity() {
 
     private fun uploadFile(baseUrl: String, deviceId: String, deviceToken: String, uri: Uri) {
         val filename = fileName(uri)
+        val totalBytes = fileSize(uri)
         val encodedName = URLEncoder.encode(filename, Charsets.UTF_8.name())
         val connection = URL("$baseUrl/api/files?filename=$encodedName").openConnection() as HttpURLConnection
         connection.requestMethod = "POST"
@@ -310,7 +311,26 @@ class NfcLaunchActivity : Activity() {
         connection.setRequestProperty("X-Device-Token", deviceToken)
 
         contentResolver.openInputStream(uri)?.use { input ->
-            connection.outputStream.use { output -> input.copyTo(output) }
+            connection.outputStream.use { output ->
+                val buffer = ByteArray(64 * 1024)
+                var uploaded = 0L
+                var lastPercent = -1
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    output.write(buffer, 0, read)
+                    uploaded += read
+                    if (totalBytes > 0) {
+                        val percent = ((uploaded * 100) / totalBytes).toInt()
+                        if (percent != lastPercent && (percent == 100 || percent - lastPercent >= 5)) {
+                            lastPercent = percent
+                            mainHandler.post { updateStatus("Sending file", "$filename $percent%", true) }
+                        }
+                    } else if (uploaded % (8L * 1024L * 1024L) < read) {
+                        mainHandler.post { updateStatus("Sending file", "$filename ${uploaded / (1024L * 1024L)} MB", true) }
+                    }
+                }
+            }
         } ?: throw IllegalStateException("Cannot read selected file")
 
         checkJsonResponse(connection)
@@ -371,6 +391,16 @@ class NfcLaunchActivity : Activity() {
             }
         }
         return "upload-${System.currentTimeMillis()}"
+    }
+
+    private fun fileSize(uri: Uri): Long {
+        contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val index = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (index >= 0) return cursor.getLong(index)
+            }
+        }
+        return -1L
     }
 
     private fun finishAfterDelay(delayMs: Long) {

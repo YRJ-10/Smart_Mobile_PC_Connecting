@@ -515,6 +515,7 @@ export class SmartMpcServer {
           });
         }).then((bytes) => {
           this.#requestLog.add("file_uploaded", { filename: parse(target).base, bytes });
+          if (platform() === "win32") execFile("explorer.exe", ["/select,", target], () => {});
           sendJson(res, 200, { ok: true, saved_to: parse(target).base, bytes });
         });
       } catch (error) {
