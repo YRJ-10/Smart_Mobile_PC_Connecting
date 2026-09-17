@@ -26,7 +26,6 @@ function createProgressWindow() {
     transparent: true,
     alwaysOnTop: true,
     skipTaskbar: true,
-    focusable: false,
     resizable: false,
     show: false,
     webPreferences: { nodeIntegration: true, contextIsolation: false }
@@ -38,8 +37,11 @@ function createProgressWindow() {
 
   const html = `
     <html>
-      <body style="margin:0; padding:12px; font-family:sans-serif; color:white; background:rgba(20,25,30,0.95); border-radius:6px; border:1px solid #333; overflow:hidden;">
-        <div style="font-size:12px; font-weight:bold; margin-bottom:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" id="title">Receiving...</div>
+      <body style="margin:0; padding:12px; font-family:sans-serif; color:white; background:rgba(20,25,30,0.95); border-radius:6px; border:1px solid #333; overflow:hidden; -webkit-app-region: drag;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <div style="font-size:12px; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" id="title">Receiving...</div>
+          <div style="cursor:pointer; font-size:16px; line-height:1; padding:0 4px; color:#888; -webkit-app-region: no-drag;" onclick="window.close()" onmouseover="this.style.color='white'" onmouseout="this.style.color='#888'">×</div>
+        </div>
         <div style="background:#333; border-radius:3px; width:100%; height:6px; overflow:hidden;">
           <div id="bar" style="background:#00d8ff; width:0%; height:100%; transition:width 0.2s;"></div>
         </div>
