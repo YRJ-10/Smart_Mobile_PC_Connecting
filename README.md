@@ -10,6 +10,8 @@ Release saat ini: **3.0.0**
 Smart MPC tidak membutuhkan cloud, akun daring, STUN, atau TURN. Android dan PC
 harus berada di jaringan lokal yang sama.
 
+**Notes: Kecepatan bergantung juga kepada router dan jaringan yang dipilih.**
+
 ## Fitur Utama
 
 ### Actions
