@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell, Tray, screen } from "electron";
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,7 +12,67 @@ const iconPath = app.isPackaged
   ? join(process.resourcesPath, "appicon.png")
   : join(appRoot, "assets", "appicon.png");
 const mediaWorker = new MediaWorkerProcess();
-const server = new SmartMpcServer({ mediaWorker });
+
+let progressWindow = null;
+let progressTimeout = null;
+
+function createProgressWindow() {
+  if (progressWindow && !progressWindow.isDestroyed()) return progressWindow;
+  
+  progressWindow = new BrowserWindow({
+    width: 320,
+    height: 60,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    focusable: false,
+    resizable: false,
+    show: false,
+    webPreferences: { nodeIntegration: true, contextIsolation: false }
+  });
+
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width, height } = primaryDisplay.workAreaSize;
+  progressWindow.setPosition(width - 340, height - 80);
+
+  const html = `
+    <html>
+      <body style="margin:0; padding:12px; font-family:sans-serif; color:white; background:rgba(20,25,30,0.95); border-radius:6px; border:1px solid #333; overflow:hidden;">
+        <div style="font-size:12px; font-weight:bold; margin-bottom:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" id="title">Receiving...</div>
+        <div style="background:#333; border-radius:3px; width:100%; height:6px; overflow:hidden;">
+          <div id="bar" style="background:#00d8ff; width:0%; height:100%; transition:width 0.2s;"></div>
+        </div>
+        <script>
+          require('electron').ipcRenderer.on('progress', (e, filename, percent) => {
+            document.getElementById('title').innerText = 'Receiving ' + filename + ' (' + percent + '%)';
+            document.getElementById('bar').style.width = percent + '%';
+          });
+        </script>
+      </body>
+    </html>
+  `;
+  progressWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  return progressWindow;
+}
+
+function handleUploadProgress(filename, percent) {
+  const win = createProgressWindow();
+  if (!win.isVisible()) win.showInactive();
+  win.webContents.send('progress', filename, percent);
+  
+  if (progressTimeout) clearTimeout(progressTimeout);
+  if (percent >= 100) {
+    progressTimeout = setTimeout(() => {
+      if (progressWindow && !progressWindow.isDestroyed()) {
+        progressWindow.close();
+        progressWindow = null;
+      }
+    }, 2500);
+  }
+}
+
+const server = new SmartMpcServer({ mediaWorker, onUploadProgress: handleUploadProgress });
 
 let mainWindow = null;
 let tray = null;

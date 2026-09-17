@@ -269,6 +269,7 @@ class MainActivity : FlutterActivity() {
         connection.setRequestProperty("Content-Type", "application/octet-stream")
         connection.setRequestProperty("X-Device-Id", config.deviceId)
         connection.setRequestProperty("X-Device-Token", config.deviceToken)
+        connection.setRequestProperty("X-File-Size", totalBytes.toString())
 
         contentResolver.openInputStream(uri)?.use { input ->
             connection.outputStream.use { output ->

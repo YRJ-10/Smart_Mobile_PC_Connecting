@@ -229,8 +229,9 @@ export class SmartMpcServer {
   #server = null;
   #startedAt = null;
 
-  constructor({ config = loadOrCreateConfig(), requestLog = new RequestLog(), mediaWorker = null } = {}) {
+  constructor({ config = loadOrCreateConfig(), requestLog = new RequestLog(), mediaWorker = null, onUploadProgress = null } = {}) {
     this.#config = config;
+    this.onUploadProgress = onUploadProgress;
     this.#requestLog = requestLog;
     this.#controlServer = new ControlServer({ config: this.#config, requestLog: this.#requestLog });
     this.#discoveryServer = new DiscoveryServer({ config: this.#config, requestLog: this.#requestLog });
@@ -497,12 +498,21 @@ export class SmartMpcServer {
         const filename = requestUrl.searchParams.get("filename") ?? `upload-${Date.now()}.bin`;
         const target = uniquePath(this.#config.inbox_dir, filename);
         
+        const totalSize = parseInt(req.headers["x-file-size"] || "0", 10);
         await new Promise((resolve, reject) => {
           const writeStream = createWriteStream(target);
           let bytesWritten = 0;
+          let lastPercent = -1;
           
           req.on("data", (chunk) => {
             bytesWritten += chunk.length;
+            if (this.onUploadProgress && totalSize > 0) {
+              const percent = Math.floor((bytesWritten * 100) / totalSize);
+              if (percent !== lastPercent && (percent === 100 || percent - lastPercent >= 1)) {
+                lastPercent = percent;
+                this.onUploadProgress(filename, percent);
+              }
+            }
           });
           
           req.pipe(writeStream);

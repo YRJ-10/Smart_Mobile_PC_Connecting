@@ -309,6 +309,7 @@ class NfcLaunchActivity : Activity() {
         connection.setRequestProperty("Content-Type", "application/octet-stream")
         connection.setRequestProperty("X-Device-Id", deviceId)
         connection.setRequestProperty("X-Device-Token", deviceToken)
+        connection.setRequestProperty("X-File-Size", totalBytes.toString())
 
         contentResolver.openInputStream(uri)?.use { input ->
             connection.outputStream.use { output ->
