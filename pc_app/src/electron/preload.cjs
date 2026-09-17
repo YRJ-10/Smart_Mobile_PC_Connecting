@@ -8,7 +8,9 @@ contextBridge.exposeInMainWorld("smartMpc", {
   getStartupSettings: () => ipcRenderer.invoke("app:getStartupSettings"),
   setStartupEnabled: (enabled) => ipcRenderer.invoke("app:setStartupEnabled", enabled),
   copy: (text) => ipcRenderer.invoke("ui:copy", text),
+  openUrl: (url) => ipcRenderer.invoke("ui:openUrl", url),
   openInbox: () => ipcRenderer.invoke("ui:openInbox"),
   openOutbox: () => ipcRenderer.invoke("ui:openOutbox"),
-  addFilesToOutbox: () => ipcRenderer.invoke("ui:addFilesToOutbox")
+  addFilesToOutbox: () => ipcRenderer.invoke("ui:addFilesToOutbox"),
+  onLinksReceived: (callback) => ipcRenderer.on("links", (_event, links) => callback(links))
 });

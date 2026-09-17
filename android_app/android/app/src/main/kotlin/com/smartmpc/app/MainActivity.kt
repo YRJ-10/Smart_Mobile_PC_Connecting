@@ -31,6 +31,16 @@ class MainActivity : FlutterActivity() {
         latestDeepLink = deepLinkFrom(intent)
         super.onCreate(savedInstanceState)
         volumeControlStream = AudioManager.STREAM_MUSIC
+        ShareEventBus.listener = { count ->
+            runOnUiThread {
+                channel?.invokeMethod("linksQueued", count)
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        ShareEventBus.listener = null
+        super.onDestroy()
     }
 
     override fun getRenderMode(): RenderMode {
@@ -114,6 +124,23 @@ class MainActivity : FlutterActivity() {
                     }
                     "stopAudioReceiver" -> {
                         stopAudioReceiver()
+                        result.success(true)
+                    }
+                    "getQueuedLinks" -> {
+                        val currentQueue = prefs.getString("queued_links", "[]") ?: "[]"
+                        try {
+                            val array = org.json.JSONArray(currentQueue)
+                            val list = mutableListOf<String>()
+                            for (i in 0 until array.length()) {
+                                list.add(array.getString(i))
+                            }
+                            result.success(list)
+                        } catch (e: Exception) {
+                            result.success(emptyList<String>())
+                        }
+                    }
+                    "clearQueuedLinks" -> {
+                        prefs.edit().remove("queued_links").apply()
                         result.success(true)
                     }
                     else -> result.notImplemented()

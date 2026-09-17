@@ -74,7 +74,13 @@ function handleUploadProgress(filename, percent) {
   }
 }
 
-const server = new SmartMpcServer({ mediaWorker, onUploadProgress: handleUploadProgress });
+function handleLinksReceived(links) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("links", links);
+  }
+}
+
+const server = new SmartMpcServer({ mediaWorker, onUploadProgress: handleUploadProgress, onLinksReceived: handleLinksReceived });
 
 let mainWindow = null;
 let tray = null;
@@ -283,6 +289,13 @@ ipcMain.handle("app:setStartupEnabled", (_event, enabled) => setStartupEnabled(e
 
 ipcMain.handle("ui:copy", (_event, text) => {
   clipboard.writeText(String(text ?? ""));
+  return true;
+});
+
+ipcMain.handle("ui:openUrl", async (_event, url) => {
+  if (url) {
+    await shell.openExternal(url);
+  }
   return true;
 });
 

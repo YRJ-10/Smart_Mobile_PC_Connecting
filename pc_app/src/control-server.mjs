@@ -202,6 +202,13 @@ export class ControlServer {
   #send(socket, payload) {
     socket.write(`${JSON.stringify(payload)}\n`);
   }
+
+  broadcast(payload) {
+    const message = `${JSON.stringify(payload)}\n`;
+    for (const socket of this.#clients) {
+      socket.write(message);
+    }
+  }
 }
 
 function normalizeCommand(command, socket) {

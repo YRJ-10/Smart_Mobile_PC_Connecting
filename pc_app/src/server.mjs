@@ -229,9 +229,10 @@ export class SmartMpcServer {
   #server = null;
   #startedAt = null;
 
-  constructor({ config = loadOrCreateConfig(), requestLog = new RequestLog(), mediaWorker = null, onUploadProgress = null } = {}) {
+  constructor({ config = loadOrCreateConfig(), requestLog = new RequestLog(), mediaWorker = null, onUploadProgress = null, onLinksReceived = null } = {}) {
     this.#config = config;
     this.onUploadProgress = onUploadProgress;
+    this.onLinksReceived = onLinksReceived;
     this.#requestLog = requestLog;
     this.#controlServer = new ControlServer({ config: this.#config, requestLog: this.#requestLog });
     this.#discoveryServer = new DiscoveryServer({ config: this.#config, requestLog: this.#requestLog });
@@ -428,7 +429,7 @@ export class SmartMpcServer {
         route === "/api/request-files" ||
         route === "/api/request-files/download" ||
         route === "/api/server/state");
-    const protectedPost = req.method === "POST" && (route === "/api/intent" || route === "/api/files" || sessionPost);
+    const protectedPost = req.method === "POST" && (route === "/api/intent" || route === "/api/files" || route === "/api/links" || sessionPost);
 
     if ((protectedGet || protectedPost) && !this.#isAuthorized(req)) {
       this.#requestLog.add("unauthorized", { route });
@@ -528,6 +529,20 @@ export class SmartMpcServer {
           if (platform() === "win32") execFile("explorer.exe", ["/select,", target], () => {});
           sendJson(res, 200, { ok: true, saved_to: parse(target).base, bytes });
         });
+      } catch (error) {
+        sendJson(res, 400, { ok: false, error: error.message });
+      }
+      return;
+    }
+
+    if (req.method === "POST" && route === "/api/links") {
+      try {
+        const body = await readJson(req);
+        if (!Array.isArray(body.links)) throw new Error("links must be an array");
+        if (this.onLinksReceived) {
+          this.onLinksReceived(body.links);
+        }
+        sendJson(res, 200, { ok: true, received: body.links.length });
       } catch (error) {
         sendJson(res, 400, { ok: false, error: error.message });
       }

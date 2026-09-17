@@ -190,12 +190,27 @@ function render(state) {
     screenStatus,
     state?.screen?.running ? `TCP ${state.screen.port} / ${state.screen.clients} client(s)` : "Stopped"
   );
-  setText(pairingToken, state?.pairing_token);
+  setText(pairingToken, showToken ? state?.pairing_token : "••••••••");
   renderBaseUrls(state?.base_urls ?? []);
   renderOutbox(state?.outbox_files ?? []);
   renderDevices(state?.trusted_devices ?? []);
   renderLogs(state?.request_log ?? []);
   showError(state?.startup_error ?? "");
+}
+
+let showToken = false;
+const toggleTokenButton = document.querySelector("#toggleTokenButton");
+const tokenEyeIcon = document.querySelector("#tokenEyeIcon");
+if (toggleTokenButton) {
+  toggleTokenButton.addEventListener("click", () => {
+    showToken = !showToken;
+    if (tokenEyeIcon) {
+      tokenEyeIcon.innerHTML = showToken
+        ? '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/><line x1="1" y1="1" x2="23" y2="23"/>'
+        : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+    }
+    if (currentState) render(currentState);
+  });
 }
 
 function renderStartup(settings) {
@@ -246,6 +261,97 @@ startupToggle.addEventListener("change", async () => {
   }
 });
 
+const linkList = document.querySelector("#linkList");
+const clearLinksButton = document.querySelector("#clearLinksButton");
+
+let savedLinks = [];
+
+function loadLinks() {
+  try {
+    savedLinks = JSON.parse(localStorage.getItem("smart_mpc_links") || "[]");
+  } catch {
+    savedLinks = [];
+  }
+  renderLinks();
+}
+
+function saveLinks() {
+  localStorage.setItem("smart_mpc_links", JSON.stringify(savedLinks));
+}
+
+function renderLinks() {
+  clearChildren(linkList);
+  
+  if (!savedLinks?.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty";
+    empty.textContent = "No links yet";
+    linkList.append(empty);
+    return;
+  }
+
+  for (const link of savedLinks) {
+    const row = document.createElement("div");
+    row.className = "link-row";
+
+    const text = document.createElement("strong");
+    text.textContent = link;
+    text.title = link;
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "6px";
+
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "icon-button";
+    copyBtn.title = "Copy";
+    copyBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+    copyBtn.addEventListener("click", () => api.copy(link));
+
+    const openBtn = document.createElement("button");
+    openBtn.type = "button";
+    openBtn.className = "icon-button";
+    openBtn.title = "Open in Browser";
+    openBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>';
+    openBtn.addEventListener("click", () => api.openUrl(link));
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "icon-button danger";
+    deleteBtn.title = "Delete";
+    deleteBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
+    deleteBtn.addEventListener("click", () => {
+      savedLinks = savedLinks.filter(l => l !== link);
+      saveLinks();
+      renderLinks();
+    });
+
+    actions.append(copyBtn, openBtn, deleteBtn);
+    row.append(text, actions);
+    linkList.prepend(row);
+  }
+}
+
+api.onLinksReceived((links) => {
+  if (Array.isArray(links)) {
+    for (const link of links) {
+      if (typeof link === "string" && link.trim()) {
+        savedLinks.push(link.trim());
+      }
+    }
+    saveLinks();
+    renderLinks();
+  }
+});
+
+clearLinksButton.addEventListener("click", () => {
+  savedLinks = [];
+  saveLinks();
+  renderLinks();
+});
+
+loadLinks();
 refresh();
 refreshTimer = setInterval(refresh, 2500);
 window.addEventListener("beforeunload", () => {

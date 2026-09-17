@@ -19,7 +19,7 @@
   "build": {
     "appId": "com.smartmpc.pcserver",
     "productName": "Smart MPC PC Server",
-    "artifactName": "Smart-MPC-PC-Server-${version}-${arch}.${ext}",
+    "artifactName": "Smart MPC PC Server.${ext}",
     "asar": true,
     "files": [
       "assets/**/*",

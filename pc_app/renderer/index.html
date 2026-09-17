@@ -51,6 +51,9 @@
               <span class="label">Pairing Token</span>
               <div class="token-row">
                 <code id="pairingToken">-</code>
+                <button id="toggleTokenButton" type="button" class="icon-button" title="Show/Hide">
+                  <svg id="tokenEyeIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
                 <button id="copyTokenButton" type="button">Copy</button>
               </div>
             </div>
@@ -102,6 +105,14 @@
             <span id="logCount" class="count">0</span>
           </div>
           <div id="logList" class="list log-list"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Inbox Tautan</h2>
+            <button id="clearLinksButton" type="button">Clear</button>
+          </div>
+          <div id="linkList" class="list link-list"></div>
         </div>
       </section>
     </main>

@@ -442,8 +442,38 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           call.arguments?.toString() ?? 'Native action finished');
     } else if (call.method == 'deepLink') {
       await _handleDeepLink(call.arguments?.toString());
+    } else if (call.method == 'linksQueued') {
+      if (_remoteConnected) {
+        await _flushQueuedLinks();
+      } else {
+        if (mounted) {
+          setState(() => _status = 'Link saved to queue (offline)');
+        }
+      }
     }
     return null;
+  }
+
+  Future<void> _flushQueuedLinks() async {
+    if (!_remoteConnected || !_isTrusted) return;
+
+    try {
+      final links = await _prefs.invokeListMethod<String>('getQueuedLinks');
+      if (links == null || links.isEmpty) return;
+
+      await _postJson('/api/links', {
+        'links': links,
+      });
+
+      await _prefs.invokeMethod('clearQueuedLinks');
+      if (mounted) {
+        setState(() => _status = 'Sent ${links.length} queued link(s) to PC');
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _status = 'Failed to send queued links: $error');
+      }
+    }
   }
 
   void _handleNativeStatus(String message) {
@@ -951,6 +981,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         if (auto) _status = 'Trusted PC connected';
       });
       if (auto) _showTrustedConnectedNotice();
+      unawaited(_flushQueuedLinks());
     } catch (error) {
       setState(() {
         _remoteConnected = false;
@@ -1523,6 +1554,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       'open_chrome',
       'lock_pc',
       'sleep_pc',
+      'flush_links',
     };
     return ids.contains(value) ? value! : 'send_file';
   }
@@ -1917,6 +1949,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       value: 'open_chrome', child: Text('Open Chrome')),
                   DropdownMenuItem(value: 'lock_pc', child: Text('Lock PC')),
                   DropdownMenuItem(value: 'sleep_pc', child: Text('Sleep PC')),
+                  DropdownMenuItem(value: 'flush_links', child: Text('Flush Queued Links')),
                 ],
                 onChanged: _busy ? null : _setQuickAction,
               ),

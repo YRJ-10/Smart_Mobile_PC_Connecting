@@ -61,6 +61,7 @@ class NfcLaunchActivity : Activity() {
             QUICK_OPEN_CHROME -> processQuickAction("Opening Chrome") { sendCommand("open_chrome") }
             QUICK_LOCK_PC -> processQuickAction("Locking PC") { sendCommand("lock_pc") }
             QUICK_SLEEP_PC -> processQuickAction("Sleeping PC") { sendCommand("sleep_pc") }
+            QUICK_FLUSH_LINKS -> processQuickAction("Flushing Links") { flushQueuedLinks() }
             QUICK_REQUEST_FILES -> openMainAppForAction()
             else -> openFilePicker()
         }
@@ -277,6 +278,40 @@ class NfcLaunchActivity : Activity() {
         }
     }
 
+    private fun flushQueuedLinks(): TapResult {
+        val config = connectionConfig()
+        val prefs = getSharedPreferences("smart_mpc", MODE_PRIVATE)
+        val currentQueue = prefs.getString("queued_links", "[]") ?: "[]"
+        
+        val array = org.json.JSONArray(currentQueue)
+        if (array.length() == 0) {
+            return TapResult("No Links", "No queued links to send.")
+        }
+
+        val body = JSONObject().put("links", array)
+        
+        val connection = URL("${config.baseUrl}/api/links").openConnection() as HttpURLConnection
+        connection.requestMethod = "POST"
+        connection.connectTimeout = 3000
+        connection.readTimeout = 5000
+        connection.doOutput = true
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.setRequestProperty("X-Device-Id", config.deviceId)
+        connection.setRequestProperty("X-Device-Token", config.deviceToken)
+
+        connection.outputStream.use { output ->
+            output.write(body.toString().toByteArray(Charsets.UTF_8))
+        }
+
+        checkJsonResponse(connection)
+        
+        // Clear queue on success
+        prefs.edit().remove("queued_links").apply()
+        ShareEventBus.notifyLinksQueued(0)
+        
+        return TapResult("Links Sent", "${array.length()} link(s) sent to PC.")
+    }
+
     private fun uploadFiles(uris: List<Uri>): TapResult {
         val prefs = getSharedPreferences(PREF_NAME, MODE_PRIVATE)
         val baseUrl = prefs.getString("baseUrl", "")?.trim().orEmpty().trimEnd('/')
@@ -432,5 +467,6 @@ class NfcLaunchActivity : Activity() {
         private const val QUICK_OPEN_CHROME = "open_chrome"
         private const val QUICK_LOCK_PC = "lock_pc"
         private const val QUICK_SLEEP_PC = "sleep_pc"
+        private const val QUICK_FLUSH_LINKS = "flush_links"
     }
 }
