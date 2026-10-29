@@ -1916,6 +1916,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       'open_chrome',
       'lock_pc',
       'sleep_pc',
+      'flush_media',
     };
     return ids.contains(value) ? value! : 'send_file';
   }
@@ -2310,6 +2311,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       value: 'open_chrome', child: Text('Open Chrome')),
                   DropdownMenuItem(value: 'lock_pc', child: Text('Lock PC')),
                   DropdownMenuItem(value: 'sleep_pc', child: Text('Sleep PC')),
+                  DropdownMenuItem(
+                      value: 'flush_media',
+                      child: Text('Flush Antrean Foto/Media')),
                 ],
                 onChanged: _busy ? null : _setQuickAction,
               ),

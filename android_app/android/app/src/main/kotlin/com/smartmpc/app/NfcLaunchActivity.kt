@@ -19,6 +19,8 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import org.json.JSONObject
+import java.io.File
+import java.io.FileInputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -61,6 +63,7 @@ class NfcLaunchActivity : Activity() {
             QUICK_OPEN_CHROME -> processQuickAction("Opening Chrome") { sendCommand("open_chrome") }
             QUICK_LOCK_PC -> processQuickAction("Locking PC") { sendCommand("lock_pc") }
             QUICK_SLEEP_PC -> processQuickAction("Sleeping PC") { sendCommand("sleep_pc") }
+            QUICK_FLUSH_MEDIA -> processQuickAction("Mengirim Antrean") { flushQueuedMedia() }
             QUICK_FLUSH_LINKS -> processQuickAction("Flushing Links") { flushQueuedLinks() }
             QUICK_REQUEST_FILES -> openMainAppForAction()
             else -> openFilePicker()
@@ -278,6 +281,50 @@ class NfcLaunchActivity : Activity() {
         }
     }
 
+    private fun flushQueuedMedia(): TapResult {
+        val config = connectionConfig()
+        val queueDir = File(getDir("app_flutter", Context.MODE_PRIVATE), "camera_queue")
+        val files = queueDir.listFiles { file -> file.isFile } ?: emptyArray()
+
+        if (files.isEmpty()) {
+            return TapResult("Antrean Kosong", "Tidak ada antrean foto/video di HP.")
+        }
+
+        var uploaded = 0
+        for (file in files) {
+            val filename = file.name
+            val totalBytes = file.length()
+            val encodedName = URLEncoder.encode(filename, Charsets.UTF_8.name())
+            val connection = URL("${config.baseUrl}/api/files?filename=$encodedName").openConnection() as HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 3000
+            connection.readTimeout = 30000
+            connection.doOutput = true
+            connection.setChunkedStreamingMode(0)
+            connection.setRequestProperty("Content-Type", "application/octet-stream")
+            connection.setRequestProperty("X-Device-Id", config.deviceId)
+            connection.setRequestProperty("X-Device-Token", config.deviceToken)
+            connection.setRequestProperty("X-File-Size", totalBytes.toString())
+
+            FileInputStream(file).use { input ->
+                connection.outputStream.use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        output.write(buffer, 0, read)
+                    }
+                }
+            }
+
+            checkJsonResponse(connection)
+            file.delete()
+            uploaded += 1
+        }
+
+        return TapResult("Media Terkirim", "$uploaded foto/video antrean berhasil dikirim ke PC!")
+    }
+
     private fun flushQueuedLinks(): TapResult {
         val config = connectionConfig()
         val prefs = getSharedPreferences("smart_mpc", MODE_PRIVATE)
@@ -468,5 +515,6 @@ class NfcLaunchActivity : Activity() {
         private const val QUICK_LOCK_PC = "lock_pc"
         private const val QUICK_SLEEP_PC = "sleep_pc"
         private const val QUICK_FLUSH_LINKS = "flush_links"
+        private const val QUICK_FLUSH_MEDIA = "flush_media"
     }
 }
