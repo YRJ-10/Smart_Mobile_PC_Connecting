@@ -8,7 +8,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:camera/camera.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'camera_capture_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'media/media_engine.dart';
@@ -956,6 +958,108 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
+  Future<void> _openCameraCapture() async {
+    final status = await Permission.camera.request();
+    if (!status.isGranted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Izin kamera diperlukan untuk fitur ini')),
+        );
+      }
+      return;
+    }
+
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Kamera tidak ditemukan pada perangkat ini')),
+          );
+        }
+        return;
+      }
+
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (context) => CameraCaptureScreen(
+            cameras: cameras,
+            onMediaCaptured: (file, filename) async {
+              await _uploadRawFile(file, filename);
+            },
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Gagal membuka kamera: ' + e.toString()),
+              backgroundColor: _dangerSoft),
+        );
+      }
+    }
+  }
+
+  Future<void> _uploadRawFile(File file, String filename) async {
+    setState(() {
+      _fileTransferStatus = 'Mengirim ' + filename + ' ke PC...';
+      _fileTransferActive = true;
+      _fileTransferProgress = null;
+    });
+
+    try {
+      final base = _normalizedBaseUrl();
+      final cleanBase =
+          base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+      final uri = Uri.parse(cleanBase + '/api/files?filename=' + Uri.encodeComponent(filename));
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 5);
+      final request = await client.postUrl(uri);
+      final size = await file.length();
+      request.headers.set('Content-Type', 'application/octet-stream');
+      request.headers.set('X-Device-Id', _deviceId);
+      request.headers.set('X-Device-Token', _deviceToken);
+      request.headers.set('X-File-Size', size.toString());
+
+      await file.openRead().pipe(request);
+      final response = await request.close();
+      if (response.statusCode == 200) {
+        if (mounted) {
+          setState(() {
+            _status = filename + ' berhasil dikirim ke PC!';
+            _fileTransferStatus = filename + ' berhasil dikirim';
+            _fileTransferActive = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(filename + ' terkirim! Folder PC otomatis terbuka.'),
+              backgroundColor: _successSoft,
+            ),
+          );
+        }
+      } else {
+        throw Exception('Server mengembalikan HTTP ' + response.statusCode.toString());
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _status = 'Gagal kirim file: ' + e.toString();
+          _fileTransferStatus = 'Gagal kirim file: ' + e.toString();
+          _fileTransferActive = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Upload gagal: ' + e.toString()),
+            backgroundColor: _dangerSoft,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _pickAndUploadFiles() async {
     if (!_isTrusted) {
       setState(() => _status = 'Trust this phone first');
@@ -1682,7 +1786,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       'open_chrome',
       'lock_pc',
       'sleep_pc',
-      'flush_links',
     };
     return ids.contains(value) ? value! : 'send_file';
   }
@@ -2077,7 +2180,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       value: 'open_chrome', child: Text('Open Chrome')),
                   DropdownMenuItem(value: 'lock_pc', child: Text('Lock PC')),
                   DropdownMenuItem(value: 'sleep_pc', child: Text('Sleep PC')),
-                  DropdownMenuItem(value: 'flush_links', child: Text('Flush Queued Links')),
                 ],
                 onChanged: _busy ? null : _setQuickAction,
               ),
@@ -2108,6 +2210,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         _busy || !_isTrusted ? null : _pickAndUploadFiles,
                     icon: const Icon(Icons.upload_file_rounded),
                     label: const Text('Send File'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: _busy || !_isTrusted || !_remoteConnected
+                        ? null
+                        : _openCameraCapture,
+                    icon: const Icon(Icons.camera_alt_rounded),
+                    label: const Text('Camera'),
                   ),
                   FilledButton.icon(
                     onPressed: _busy || !_isTrusted ? null : _loadRequestFiles,
