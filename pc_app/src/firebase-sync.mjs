@@ -27,8 +27,15 @@ export class FirebaseSync {
   }
 
   initServiceAccount() {
-    const credPath = join(this.appRoot, "firebase-service-account.json");
-    if (!existsSync(credPath)) {
+    const candidates = [
+      join(this.appRoot, "firebase-service-account.json"),
+      process.resourcesPath ? join(process.resourcesPath, "firebase-service-account.json") : null,
+      join(process.env.APPDATA || "", "Smart MPC", "firebase-service-account.json"),
+      join(process.cwd(), "firebase-service-account.json"),
+      join(process.cwd(), "pc_app", "firebase-service-account.json")
+    ];
+    const credPath = candidates.find((p) => p && existsSync(p));
+    if (!credPath) {
       console.log("[FirebaseSync] No firebase-service-account.json found. Cloud sync disabled.");
       return;
     }

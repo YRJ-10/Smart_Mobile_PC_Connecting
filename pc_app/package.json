@@ -25,7 +25,8 @@
       "assets/**/*",
       "renderer/**/*",
       "src/**/*",
-      "package.json"
+      "package.json",
+      "firebase-service-account.json"
     ],
     "extraResources": [
       {
@@ -38,6 +39,10 @@
         "filter": [
           "*.exe"
         ]
+      },
+      {
+        "from": "firebase-service-account.json",
+        "to": "firebase-service-account.json"
       }
     ],
     "directories": {
