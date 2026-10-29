@@ -323,26 +323,110 @@ span,
 }
 
 .link-row {
-  display: flex;
   align-items: center;
+  border: 1px solid #253139;
+  border-radius: 6px;
+  background: #182026;
+  display: flex;
   flex-direction: row;
+  gap: 10px;
   justify-content: space-between;
-  gap: 8px;
-  padding: 8px 12px;
-  min-height: 40px;
+  padding: 8px 10px;
+  min-height: 48px;
+  transition: opacity 0.2s, border-color 0.2s, background 0.2s;
 }
 
-.link-row strong {
+.link-row:hover {
+  border-color: #38464f;
+}
+
+.link-row.opened {
+  background: #13171a;
+  border-color: #1f272c;
+  opacity: 0.8;
+}
+
+.link-row.opened:hover {
+  opacity: 1;
+  border-color: #2e3a42;
+}
+
+.link-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.link-url {
   font-size: 13px;
-  font-weight: normal;
+  font-weight: 500;
   color: #8edfd1;
   text-decoration: underline;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
-  min-width: 0;
+  display: block;
+}
+
+.link-row.opened .link-url {
+  color: #8e9ea6;
+  text-decoration: none;
+}
+
+.link-row.opened .link-url:hover {
+  text-decoration: underline;
+}
+
+.link-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.link-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 1px 6px;
+  line-height: 1.4;
+  letter-spacing: 0.3px;
+  user-select: none;
+}
+
+.link-badge.badge-new {
+  background: rgba(142, 223, 209, 0.12);
+  color: #8edfd1;
+  border: 1px solid rgba(142, 223, 209, 0.3);
+}
+
+.link-badge.badge-opened {
+  background: rgba(176, 190, 197, 0.12);
+  color: #b0bec5;
+  border: 1px solid rgba(176, 190, 197, 0.25);
+}
+
+.link-badge.badge-copied {
+  background: rgba(101, 214, 166, 0.14);
+  color: #65d6a6;
+  border: 1px solid rgba(101, 214, 166, 0.3);
+}
+
+.link-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.icon-button.is-active {
+  border-color: #3b5360;
+  color: #8edfd1;
 }
 
 .icon-button {

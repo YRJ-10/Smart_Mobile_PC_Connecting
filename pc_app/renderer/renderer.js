@@ -266,9 +266,29 @@ const clearLinksButton = document.querySelector("#clearLinksButton");
 
 let savedLinks = [];
 
+function normalizeLinkItem(item) {
+  if (typeof item === "string") {
+    return {
+      id: "lnk_" + Math.random().toString(36).slice(2, 9),
+      url: item,
+      opened: false,
+      copied: false,
+      createdAt: Date.now()
+    };
+  }
+  return {
+    id: item.id || ("lnk_" + Math.random().toString(36).slice(2, 9)),
+    url: item.url || "",
+    opened: Boolean(item.opened),
+    copied: Boolean(item.copied),
+    createdAt: item.createdAt || Date.now()
+  };
+}
+
 function loadLinks() {
   try {
-    savedLinks = JSON.parse(localStorage.getItem("smart_mpc_links") || "[]");
+    const raw = JSON.parse(localStorage.getItem("smart_mpc_links") || "[]");
+    savedLinks = Array.isArray(raw) ? raw.map(normalizeLinkItem) : [];
   } catch {
     savedLinks = [];
   }
@@ -290,31 +310,77 @@ function renderLinks() {
     return;
   }
 
-  for (const link of savedLinks) {
+  for (const item of savedLinks) {
     const row = document.createElement("div");
     row.className = "link-row";
+    if (item.opened) row.classList.add("opened");
+    if (item.copied) row.classList.add("copied");
+
+    const content = document.createElement("div");
+    content.className = "link-content";
 
     const text = document.createElement("strong");
-    text.textContent = link;
-    text.title = link;
+    text.className = "link-url";
+    text.textContent = item.url;
+    text.title = item.url + (item.opened ? " (Sudah dibuka)" : "");
+    text.addEventListener("click", () => {
+      api.openUrl(item.url);
+      item.opened = true;
+      saveLinks();
+      renderLinks();
+    });
+
+    const badges = document.createElement("div");
+    badges.className = "link-badges";
+
+    if (!item.opened && !item.copied) {
+      const badgeNew = document.createElement("span");
+      badgeNew.className = "link-badge badge-new";
+      badgeNew.textContent = "Baru";
+      badges.append(badgeNew);
+    } else {
+      if (item.opened) {
+        const badgeOpened = document.createElement("span");
+        badgeOpened.className = "link-badge badge-opened";
+        badgeOpened.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:10px;height:10px;"><polyline points="20 6 9 17 4 12"/></svg> Dibuka';
+        badges.append(badgeOpened);
+      }
+      if (item.copied) {
+        const badgeCopied = document.createElement("span");
+        badgeCopied.className = "link-badge badge-copied";
+        badgeCopied.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:10px;height:10px;"><polyline points="20 6 9 17 4 12"/></svg> Disalin';
+        badges.append(badgeCopied);
+      }
+    }
+
+    content.append(text, badges);
 
     const actions = document.createElement("div");
-    actions.style.display = "flex";
-    actions.style.gap = "6px";
+    actions.className = "link-actions";
 
     const copyBtn = document.createElement("button");
     copyBtn.type = "button";
-    copyBtn.className = "icon-button";
-    copyBtn.title = "Copy";
+    copyBtn.className = "icon-button" + (item.copied ? " is-active" : "");
+    copyBtn.title = item.copied ? "Disalin (klik untuk salin lagi)" : "Copy";
     copyBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
-    copyBtn.addEventListener("click", () => api.copy(link));
+    copyBtn.addEventListener("click", () => {
+      api.copy(item.url);
+      item.copied = true;
+      saveLinks();
+      renderLinks();
+    });
 
     const openBtn = document.createElement("button");
     openBtn.type = "button";
-    openBtn.className = "icon-button";
-    openBtn.title = "Open in Browser";
+    openBtn.className = "icon-button" + (item.opened ? " is-active" : "");
+    openBtn.title = item.opened ? "Sudah dibuka (klik untuk buka lagi)" : "Open in Browser";
     openBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>';
-    openBtn.addEventListener("click", () => api.openUrl(link));
+    openBtn.addEventListener("click", () => {
+      api.openUrl(item.url);
+      item.opened = true;
+      saveLinks();
+      renderLinks();
+    });
 
     const deleteBtn = document.createElement("button");
     deleteBtn.type = "button";
@@ -322,13 +388,13 @@ function renderLinks() {
     deleteBtn.title = "Delete";
     deleteBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
     deleteBtn.addEventListener("click", () => {
-      savedLinks = savedLinks.filter(l => l !== link);
+      savedLinks = savedLinks.filter(l => l.id !== item.id);
       saveLinks();
       renderLinks();
     });
 
     actions.append(copyBtn, openBtn, deleteBtn);
-    row.append(text, actions);
+    row.append(content, actions);
     linkList.prepend(row);
   }
 }
@@ -337,7 +403,7 @@ api.onLinksReceived((links) => {
   if (Array.isArray(links)) {
     for (const link of links) {
       if (typeof link === "string" && link.trim()) {
-        savedLinks.push(link.trim());
+        savedLinks.push(normalizeLinkItem(link.trim()));
       }
     }
     saveLinks();
