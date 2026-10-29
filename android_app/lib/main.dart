@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'media/media_engine.dart';
 import 'media/media_state.dart';
@@ -30,6 +32,11 @@ const _mutedText = Color(0xFF9AA8AF);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint('Firebase init error: $e');
+  }
   if (Platform.isAndroid) {
     await WebRTC.initialize(
       options: <String, dynamic>{
@@ -145,6 +152,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _urlController = TextEditingController(text: 'https://example.com');
   final _clipboardController = TextEditingController();
   final _liveTextController = TextEditingController();
+  final _memoController = TextEditingController();
+  bool _autoLaunchChrome = false;
 
   bool _busy = false;
   bool _remoteConnected = false;
@@ -234,6 +243,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _urlController.dispose();
     _clipboardController.dispose();
     _liveTextController.dispose();
+    _memoController.dispose();
     super.dispose();
   }
 
@@ -454,18 +464,42 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return null;
   }
 
+  Future<void> _pushToCloudQueue({
+    required String type,
+    required String content,
+    bool autoLaunch = false,
+  }) async {
+    await FirebaseFirestore.instance.collection('smart_mpc_queue').add({
+      'type': type,
+      'content': content,
+      'autoLaunch': autoLaunch,
+      'createdAt': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
   Future<void> _flushQueuedLinks() async {
-    if (!_remoteConnected || !_isTrusted) return;
+
 
     try {
       final links = await _prefs.invokeListMethod<String>('getQueuedLinks');
       if (links == null || links.isEmpty) return;
 
-      await _postJson('/api/links', {
+      if (_remoteConnected && _isTrusted) {
+        await _postJson('/api/links', {
         'links': links,
       });
 
       await _prefs.invokeMethod('clearQueuedLinks');
+      } else {
+        for (final link in links) {
+          await _pushToCloudQueue(
+            type: 'link',
+            content: link,
+            autoLaunch: false,
+          );
+        }
+        await _prefs.invokeMethod('clearQueuedLinks');
+      }
       if (mounted) {
         setState(() => _status = 'Sent ${links.length} queued link(s) to PC');
       }
@@ -813,17 +847,30 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _sendUrl() async {
-    await _run('Opening URL on PC', () async {
-      final url = _urlController.text.trim();
-      if (url.isEmpty) throw Exception('URL is empty');
-      await _postJson('/api/intent', {
-        'type': 'url',
-        'source': 'android',
-        'payload': {'url': url},
+    final url = _urlController.text.trim();
+    if (url.isEmpty) return;
+
+    if (_remoteConnected && _isTrusted) {
+      await _run('Opening URL on PC', () async {
+        await _postJson('/api/intent', {
+          'type': 'url',
+          'source': 'android',
+          'payload': {'url': url, 'autoLaunch': _autoLaunchChrome},
+        });
+        return 'URL sent to PC';
       });
-      return 'URL sent to PC';
-    });
+    } else {
+      await _run('Sending URL to Cloud Queue', () async {
+        await _pushToCloudQueue(
+          type: 'link',
+          content: url,
+          autoLaunch: _autoLaunchChrome,
+        );
+        return 'URL dikirim ke Cloud (akan diproses saat PC online)';
+      });
+    }
   }
+
 
   Future<void> _setQuickAction(String? value) async {
     setState(() => _quickAction = _validQuickAction(value));
@@ -846,15 +893,45 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _sendClipboard() async {
-    await _run('Sending clipboard to PC', () async {
-      await _postJson('/api/intent', {
-        'type': 'clipboard',
-        'source': 'android',
-        'payload': {'text': _clipboardController.text},
+    final text = _clipboardController.text;
+    if (text.isEmpty) return;
+
+    if (_remoteConnected && _isTrusted) {
+      await _run('Sending clipboard to PC', () async {
+        await _postJson('/api/intent', {
+          'type': 'clipboard',
+          'source': 'android',
+          'payload': {'text': text},
+        });
+        return 'Clipboard sent to PC';
       });
-      return 'Clipboard sent to PC';
+    } else {
+      await _run('Sending clipboard to Cloud Queue', () async {
+        await _pushToCloudQueue(
+          type: 'clipboard',
+          content: text,
+        );
+        return 'Clipboard dikirim ke Cloud (akan disinkron saat PC online)';
+      });
+    }
+  }
+
+  Future<void> _sendMemo() async {
+    final memo = _memoController.text.trim();
+    if (memo.isEmpty) return;
+
+    await _run('Mengirim Memo Prioritas', () async {
+      await _pushToCloudQueue(
+        type: 'memo',
+        content: memo,
+      );
+      if (mounted) {
+        _memoController.clear();
+      }
+      return 'Memo prioritas dikirim! Akan muncul di tengah layar monitor saat PC aktif.';
     });
   }
+
 
   Future<void> _pullPcClipboard() async {
     await _run('Reading PC clipboard', () async {
@@ -2045,7 +2122,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 children: [
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: _busy || !_isTrusted ? null : _sendClipboard,
+                      onPressed: _busy ? null : _sendClipboard,
                       icon: const Icon(Icons.send_rounded),
                       label: const Text('Send'),
                     ),
@@ -2067,6 +2144,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _SectionCard(
           title: 'URL',
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               TextField(
                 controller: _urlController,
@@ -2076,13 +2154,56 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 keyboardType: TextInputType.url,
               ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Checkbox(
+                    value: _autoLaunchChrome,
+                    onChanged: (val) => setState(() => _autoLaunchChrome = val ?? false),
+                  ),
+                  const Expanded(
+                    child: Text(
+                      'Buka otomatis di Chrome PC (Profil Default)',
+                      style: TextStyle(fontSize: 13, color: _mutedText),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.icon(
+                  onPressed: _busy ? null : _sendUrl,
+                  icon: const Icon(Icons.open_in_browser_rounded),
+                  label: const Text('Kirim ke PC'),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _SectionCard(
+          title: 'Memo Prioritas (Pop-up Layar PC)',
+          child: Column(
+            children: [
+              TextField(
+                controller: _memoController,
+                decoration: const InputDecoration(
+                  labelText: 'Catatan / Pengingat untuk PC',
+                  hintText: 'Tulis pesan yang akan muncul di monitor...',
+                  prefixIcon: Icon(Icons.push_pin_rounded),
+                  alignLabelWithHint: true,
+                ),
+                minLines: 2,
+                maxLines: 4,
+              ),
               const SizedBox(height: 12),
               Align(
                 alignment: Alignment.centerLeft,
                 child: FilledButton.icon(
-                  onPressed: _busy || !_isTrusted ? null : _sendUrl,
-                  icon: const Icon(Icons.open_in_browser_rounded),
-                  label: const Text('Open on PC'),
+                  onPressed: _busy ? null : _sendMemo,
+                  icon: const Icon(Icons.send_rounded),
+                  label: const Text('Kirim Memo ke Monitor'),
                 ),
               ),
             ],
