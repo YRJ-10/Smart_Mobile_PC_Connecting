@@ -136,12 +136,15 @@ GoogleService-Info.plist
 **/GoogleService-Info.plist
 *serviceAccount*.json
 *service_account*.json
+*service-account*.json
 *firebase-admin*.json
 *firebase-adminsdk*.json
 *firebase-key*.json
 *firebase-credentials*.json
 firebase-config.json
 **/firebase-config.json
+firebase-service-account.json
+**/firebase-service-account.json
 **/firebase_options.dart
 !**/firebase_options.example.dart
 
