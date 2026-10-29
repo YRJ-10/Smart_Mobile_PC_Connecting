@@ -1,9 +1,11 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell, Tray, screen } from "electron";
+import { exec } from "node:child_process";
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SmartMpcServer } from "../server.mjs";
 import { MediaWorkerProcess } from "../media/media-worker-process.mjs";
+import { FirebaseSync } from "../firebase-sync.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const appRoot = join(__dirname, "..", "..");
@@ -81,6 +83,180 @@ function handleLinksReceived(links) {
 }
 
 const server = new SmartMpcServer({ mediaWorker, onUploadProgress: handleUploadProgress, onLinksReceived: handleLinksReceived });
+
+function launchChromeDefault(url) {
+  if (!url) return;
+  const safeUrl = String(url).replace(/"/g, "%22");
+  const cmd = `cmd.exe /c start chrome --profile-directory="Default" "${safeUrl}"`;
+  exec(cmd, (err) => {
+    if (err) {
+      console.warn("[ChromeLaunch] Fallback to shell.openExternal:", err.message);
+      shell.openExternal(url);
+    }
+  });
+}
+
+function showMemoWindow(memo) {
+  const win = new BrowserWindow({
+    width: 440,
+    height: 320,
+    resizable: false,
+    alwaysOnTop: true,
+    center: true,
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    icon: iconPath,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  });
+
+  const formattedDate = memo.createdAt ? new Date(memo.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+  const safeContent = String(memo.content ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\n/g, "<br>");
+
+  const html = `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body {
+            background: #141a1f;
+            color: #e8edf0;
+            font-family: "Segoe UI", Arial, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #2d3b45;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+          }
+          .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background: #1a2228;
+            border-bottom: 1px solid #253139;
+            -webkit-app-region: drag;
+          }
+          .title-area {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+          .icon-memo { font-size: 16px; }
+          .title {
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #f2b56b;
+          }
+          .time {
+            font-size: 11px;
+            color: #8e9ea6;
+            margin-left: 6px;
+          }
+          .close-btn {
+            background: none;
+            border: none;
+            color: #8e9ea6;
+            font-size: 18px;
+            cursor: pointer;
+            -webkit-app-region: no-drag;
+            line-height: 1;
+            padding: 0 4px;
+          }
+          .close-btn:hover { color: #fff; }
+          .body {
+            flex: 1;
+            padding: 18px;
+            overflow-y: auto;
+            font-size: 15px;
+            line-height: 1.6;
+            color: #e8edf0;
+            user-select: text;
+          }
+          .footer {
+            padding: 12px 16px;
+            background: #171e23;
+            border-top: 1px solid #222d33;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+          }
+          .btn-done {
+            background: #202b31;
+            border: 1px solid #38464f;
+            color: #8edfd1;
+            font-weight: 600;
+            font-size: 13px;
+            padding: 8px 18px;
+            border-radius: 6px;
+            cursor: pointer;
+          }
+          .btn-done:hover {
+            background: #26343c;
+            border-color: #8edfd1;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="title-area">
+            <span class="icon-memo">📌</span>
+            <span class="title">Memo Prioritas</span>
+            ${formattedDate ? '<span class="time">' + formattedDate + '</span>' : ""}
+          </div>
+          <button class="close-btn" onclick="window.close()">✕</button>
+        </div>
+        <div class="body">
+          ${safeContent}
+        </div>
+        <div class="footer">
+          <button class="btn-done" onclick="window.close()">Sudah Dibaca</button>
+        </div>
+      </body>
+    </html>
+  `;
+  win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
+}
+
+const firebaseSync = new FirebaseSync({
+  appRoot,
+  onLinks: (items) => {
+    const urls = [];
+    for (const item of items) {
+      if (item.url) {
+        urls.push(item.url);
+        if (item.autoLaunch) {
+          launchChromeDefault(item.url);
+        }
+      }
+    }
+    if (urls.length) {
+      handleLinksReceived(urls);
+    }
+  },
+  onClipboard: (text) => {
+    if (text) {
+      clipboard.writeText(String(text));
+      console.log("[FirebaseSync] System clipboard updated from cloud queue.");
+    }
+  },
+  onMemo: (memo) => {
+    showMemoWindow(memo);
+  }
+});
 
 let mainWindow = null;
 let tray = null;
@@ -257,6 +433,7 @@ async function startServerSafely() {
 
 app.whenReady().then(async () => {
   await startServerSafely();
+  firebaseSync.start(10000);
   createTray();
   createWindow({ showOnReady: false });
 
@@ -266,6 +443,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", async (event) => {
+  firebaseSync.stop();
   if (!server.running) return;
   event.preventDefault();
   await server.stop();
