@@ -5,10 +5,11 @@ jaringan lokal. Satu aplikasi Android terhubung ke satu server Windows untuk
 menjalankan quick action, memindahkan file dan clipboard, mengendalikan mouse dan
 keyboard, menerima audio PC, serta melihat layar PC secara langsung.
 
-Release saat ini: **3.0.0**
+Release saat ini: **3.1.0**
 
-Smart MPC tidak membutuhkan cloud, akun daring, STUN, atau TURN. Android dan PC
-harus berada di jaringan lokal yang sama.
+Smart MPC mengutamakan jalur komunikasi lokal langsung (LAN) berkecepatan tinggi tanpa perantara untuk kontrol mouse/keyboard real-time dan streaming media WebRTC.
+
+Mulai rilis **3.1.0**, terdapat tambahan integrasi server database (saat ini menggunakan Firebase Firestore) sebagai antrean asynchronous (queue). Antrean ini memungkinkan pengiriman link, clipboard, dan memo tetap tersimpan ketika PC sedang offline dan otomatis dieksekusi begitu PC server menyala. Komponen database ini bersifat modular dan fleksibel—dapat menggunakan server database apa pun dan dapat diganti dengan backend berbasis SQL (PostgreSQL, MySQL, SQLite) maupun REST API kustom di kemudian hari.
 
 **Notes: Kecepatan bergantung juga kepada router dan jaringan yang dipilih.**
 
@@ -23,6 +24,9 @@ harus berada di jaringan lokal yang sama.
 - Membuka URL di PC.
 - Membuka inbox/outbox, membuka Chrome, mengunci PC, dan membuat PC sleep.
 - Memilih profil monitor melalui bridge lokal opsional.
+- Mengambil foto dan video langsung (silent in-app camera) dengan sistem antrean offline otomatis dan auto-flush saat terhubung ke PC.
+- Mengirim priority memo pop-up dan membuka URL ke profil default browser PC secara otomatis.
+- Menjalankan background flush antrean foto/media melalui trigger NFC (quick action 'flush_media').
 
 ### Remote
 
@@ -92,6 +96,8 @@ flowchart LR
     B -->|"validated commands over stdio"| D
     D -->|"mouse, keyboard, media keys"| E
     B -->|"URL, clipboard, folders, power, monitor bridge"| E
+    A -.->|"Async queue: links, clipboard, memo (saat PC offline)"| F[("Database Queue: Firebase / SQL / Custom")]
+    B -.->|"Sync dan proses queue saat PC online"| F
 ```
 
 ### Komponen
@@ -180,6 +186,7 @@ Tahapan utama yang telah dilalui:
    fitur stabil lainnya.
 7. **Release 3.0.0**: audio Opus, mirror WebRTC, Android media lifecycle, transport
    probes, packaged PC Server, dan APK release diverifikasi bersama.
+8. **Release 3.1.0**: integrasi antrean database asynchronous (Firebase Firestore / modular SQL), in-app silent camera & offline media auto-queue, priority memo pop-up, auto-launch Chrome profile toggle, dan trigger headless NFC flush media.
 
 Catatan proses lebih rinci:
 
