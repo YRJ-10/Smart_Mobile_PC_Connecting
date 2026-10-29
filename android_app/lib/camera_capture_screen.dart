@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 const _panelBorder = Color(0xFF344248);
 const _accentSoft = Color(0xFF8EDFD1);
 const _successSoft = Color(0xFF8FDCAD);
+const _warningSoft = Color(0xFFE2B978);
 const _dangerSoft = Color(0xFFD87A7A);
 const _mutedText = Color(0xFF9AA8AF);
 
@@ -14,10 +15,12 @@ class CameraCaptureScreen extends StatefulWidget {
   const CameraCaptureScreen({
     super.key,
     required this.cameras,
+    required this.isOnline,
     required this.onMediaCaptured,
   });
 
   final List<CameraDescription> cameras;
+  final bool isOnline;
   final Future<void> Function(File file, String filename) onMediaCaptured;
 
   @override
@@ -34,7 +37,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
   Timer? _recordingTimer;
   XFile? _capturedFile;
   bool _isCapturedVideo = false;
-  bool _isUploading = false;
+  bool _isProcessing = false;
   String? _errorMessage;
 
   @override
@@ -153,16 +156,16 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
   }
 
   void _retake() {
-    if (_isUploading) return;
+    if (_isProcessing) return;
     setState(() {
       _capturedFile = null;
       _isCapturedVideo = false;
     });
   }
 
-  Future<void> _confirmAndSend() async {
-    if (_capturedFile == null || _isUploading) return;
-    setState(() => _isUploading = true);
+  Future<void> _confirmAndProceed() async {
+    if (_capturedFile == null || _isProcessing) return;
+    setState(() => _isProcessing = true);
 
     final now = DateTime.now();
     final d = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
@@ -178,9 +181,9 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _isUploading = false);
+        setState(() => _isProcessing = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal mengirim media: $e'), backgroundColor: _dangerSoft),
+          SnackBar(content: Text('Terjadi kesalahan: $e'), backgroundColor: _dangerSoft),
         );
       }
     }
@@ -203,6 +206,8 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
   }
 
   Widget _buildPreviewUi() {
+    final isOnline = widget.isOnline;
+
     return Stack(
       children: [
         Center(
@@ -213,13 +218,15 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
                     const Icon(Icons.videocam_rounded, size: 80, color: _accentSoft),
                     const SizedBox(height: 16),
                     Text(
-                      'Video Siap Dikirim (${_formatDuration(_recordingDuration)})',
+                      'Video Siap (${_formatDuration(_recordingDuration)})',
                       style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
-                      'Video tersimpan dan siap ditransfer langsung ke PC.',
-                      style: TextStyle(color: _mutedText, fontSize: 13),
+                    Text(
+                      isOnline
+                          ? 'Video akan langsung dikirim ke PC via LAN lokal.'
+                          : 'PC offline. Video akan disimpan di antrean HP.',
+                      style: const TextStyle(color: _mutedText, fontSize: 13),
                     ),
                   ],
                 )
@@ -233,7 +240,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
           left: 16,
           child: IconButton(
             icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
-            onPressed: _isUploading ? null : () => Navigator.of(context).pop(),
+            onPressed: _isProcessing ? null : () => Navigator.of(context).pop(),
           ),
         ),
         Positioned(
@@ -244,7 +251,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               OutlinedButton.icon(
-                onPressed: _isUploading ? null : _retake,
+                onPressed: _isProcessing ? null : _retake,
                 icon: const Icon(Icons.refresh_rounded),
                 label: const Text('Ulangi'),
                 style: OutlinedButton.styleFrom(
@@ -254,20 +261,25 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
                 ),
               ),
               FilledButton.icon(
-                onPressed: _isUploading ? null : _confirmAndSend,
-                icon: _isUploading
+                onPressed: _isProcessing ? null : _confirmAndProceed,
+                icon: _isProcessing
                     ? const SizedBox(
                         width: 18,
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
                       )
-                    : const Icon(Icons.send_rounded, color: Colors.black),
+                    : Icon(
+                        isOnline ? Icons.send_rounded : Icons.archive_rounded,
+                        color: Colors.black,
+                      ),
                 label: Text(
-                  _isUploading ? 'Mengirim...' : 'Kirim ke PC',
+                  _isProcessing
+                      ? (isOnline ? 'Mengirim...' : 'Menyimpan...')
+                      : (isOnline ? 'Kirim ke PC' : 'Simpan Antrean'),
                   style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
                 ),
                 style: FilledButton.styleFrom(
-                  backgroundColor: _successSoft,
+                  backgroundColor: isOnline ? _successSoft : _warningSoft,
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                 ),
               ),

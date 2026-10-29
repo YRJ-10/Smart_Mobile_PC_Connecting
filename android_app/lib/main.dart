@@ -11,6 +11,7 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:camera/camera.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'camera_capture_screen.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'media/media_engine.dart';
@@ -156,6 +157,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _liveTextController = TextEditingController();
   final _memoController = TextEditingController();
   bool _autoLaunchChrome = false;
+  int _queuedMediaCount = 0;
+  bool _isFlushingMedia = false;
+  Timer? _autoReconnectTimer;
 
   bool _busy = false;
   bool _remoteConnected = false;
@@ -229,10 +233,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _mediaService.commands.listen(_handleMediaServiceCommand);
     unawaited(_requestMicrophonePermission());
     _bootstrap();
+    unawaited(_refreshQueuedMediaCount());
+    _autoReconnectTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!_remoteConnected && _isTrusted && !_autoConnectInFlight && mounted) {
+        unawaited(_autoConnectToTrustedPc());
+      }
+    });
   }
 
   @override
   void dispose() {
+    _autoReconnectTimer?.cancel();
     _disposing = true;
     WidgetsBinding.instance.removeObserver(this);
     _speech.stop();
@@ -958,6 +969,114 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
+  Future<Directory> _getCameraQueueDir() async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final queueDir = Directory(appDir.path + '/camera_queue');
+    if (!await queueDir.exists()) {
+      await queueDir.create(recursive: true);
+    }
+    return queueDir;
+  }
+
+  Future<void> _refreshQueuedMediaCount() async {
+    try {
+      final dir = await _getCameraQueueDir();
+      final entities = await dir.list().toList();
+      final files = entities.whereType<File>().toList();
+      if (mounted) {
+        setState(() => _queuedMediaCount = files.length);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _flushQueuedMedia() async {
+    if (_isFlushingMedia || !_remoteConnected || !_isTrusted) return;
+    _isFlushingMedia = true;
+
+    try {
+      final queueDir = await _getCameraQueueDir();
+      final entities = await queueDir.list().toList();
+      final files = entities.whereType<File>().toList();
+      if (files.isEmpty) return;
+
+      if (mounted) {
+        setState(() {
+          _fileTransferStatus =
+              'Mengirim ' + files.length.toString() + ' file antrean kamera ke PC...';
+          _fileTransferActive = true;
+          _fileTransferProgress = null;
+        });
+      }
+
+      int sentCount = 0;
+      for (final file in files) {
+        if (!_remoteConnected || !_isTrusted) break;
+        final filename = file.uri.pathSegments.last;
+        try {
+          await _uploadRawFile(file, filename, showNotice: false);
+          await file.delete();
+          sentCount++;
+          await _refreshQueuedMediaCount();
+        } catch (e) {
+          debugPrint('Gagal flush ' + filename + ': ' + e.toString());
+        }
+      }
+
+      if (mounted && sentCount > 0) {
+        setState(() {
+          _status = sentCount.toString() +
+              ' foto/video antrean berhasil dikirim ke PC!';
+          _fileTransferStatus = sentCount.toString() + ' file antrean terkirim';
+          _fileTransferActive = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(sentCount.toString() +
+                ' foto/video dari antrean HP berhasil dikirim ke PC!'),
+            backgroundColor: _successSoft,
+          ),
+        );
+      }
+    } finally {
+      _isFlushingMedia = false;
+      await _refreshQueuedMediaCount();
+    }
+  }
+
+  Future<void> _handleCapturedMedia(File file, String filename) async {
+    if (_remoteConnected && _isTrusted) {
+      await _uploadRawFile(file, filename);
+    } else {
+      try {
+        final queueDir = await _getCameraQueueDir();
+        final targetPath = queueDir.path + '/' + filename;
+        await file.copy(targetPath);
+        await _refreshQueuedMediaCount();
+        if (mounted) {
+          setState(() {
+            _status = filename + ' disimpan di antrean HP (offline)';
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(filename +
+                  ' disimpan di antrean HP. Akan otomatis terkirim saat PC terhubung!'),
+              backgroundColor: _warningSoft,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Gagal menyimpan ke antrean: ' + e.toString()),
+              backgroundColor: _dangerSoft,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   Future<void> _openCameraCapture() async {
     final status = await Permission.camera.request();
     if (!status.isGranted) {
@@ -986,8 +1105,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         MaterialPageRoute<void>(
           builder: (context) => CameraCaptureScreen(
             cameras: cameras,
+            isOnline: _remoteConnected && _isTrusted,
             onMediaCaptured: (file, filename) async {
-              await _uploadRawFile(file, filename);
+              await _handleCapturedMedia(file, filename);
             },
           ),
         ),
@@ -1003,7 +1123,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _uploadRawFile(File file, String filename) async {
+  Future<void> _uploadRawFile(File file, String filename,
+      {bool showNotice = true}) async {
     setState(() {
       _fileTransferStatus = 'Mengirim ' + filename + ' ke PC...';
       _fileTransferActive = true;
@@ -1014,7 +1135,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final base = _normalizedBaseUrl();
       final cleanBase =
           base.endsWith('/') ? base.substring(0, base.length - 1) : base;
-      final uri = Uri.parse(cleanBase + '/api/files?filename=' + Uri.encodeComponent(filename));
+      final uri = Uri.parse(cleanBase +
+          '/api/files?filename=' +
+          Uri.encodeComponent(filename));
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 5);
       final request = await client.postUrl(uri);
@@ -1033,15 +1156,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             _fileTransferStatus = filename + ' berhasil dikirim';
             _fileTransferActive = false;
           });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(filename + ' terkirim! Folder PC otomatis terbuka.'),
-              backgroundColor: _successSoft,
-            ),
-          );
+          if (showNotice) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(filename + ' terkirim! Folder PC otomatis terbuka.'),
+                backgroundColor: _successSoft,
+              ),
+            );
+          }
         }
       } else {
-        throw Exception('Server mengembalikan HTTP ' + response.statusCode.toString());
+        throw Exception(
+            'Server mengembalikan HTTP ' + response.statusCode.toString());
       }
     } catch (e) {
       if (mounted) {
@@ -1050,13 +1176,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _fileTransferStatus = 'Gagal kirim file: ' + e.toString();
           _fileTransferActive = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Upload gagal: ' + e.toString()),
-            backgroundColor: _dangerSoft,
-          ),
-        );
+        if (showNotice) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Upload gagal: ' + e.toString()),
+              backgroundColor: _dangerSoft,
+            ),
+          );
+        }
       }
+      rethrow;
     }
   }
 
@@ -1152,6 +1281,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   });
                   if (auto) _showTrustedConnectedNotice();
                   unawaited(_flushQueuedLinks());
+                  unawaited(_flushQueuedMedia());
                 }
               } else if (msg['ok'] == false) {
                 if (!authCompleter.isCompleted) authCompleter.complete(false);
@@ -2212,11 +2342,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     label: const Text('Send File'),
                   ),
                   FilledButton.icon(
-                    onPressed: _busy || !_isTrusted || !_remoteConnected
-                        ? null
-                        : _openCameraCapture,
+                    onPressed: _busy ? null : _openCameraCapture,
                     icon: const Icon(Icons.camera_alt_rounded),
-                    label: const Text('Camera'),
+                    label: Text(_queuedMediaCount > 0
+                        ? 'Camera (' + _queuedMediaCount.toString() + ')'
+                        : 'Camera'),
                   ),
                   FilledButton.icon(
                     onPressed: _busy || !_isTrusted ? null : _loadRequestFiles,
@@ -2225,6 +2355,57 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ),
                 ],
               ),
+              if (_queuedMediaCount > 0) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: _warningSoft.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: _warningSoft.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.archive_rounded, size: 18, color: _warningSoft),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _queuedMediaCount.toString() +
+                              ' media di antrean HP (' +
+                              (_remoteConnected ? 'siap kirim' : 'menunggu PC on') +
+                              ')',
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: _warningSoft,
+                              fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _isFlushingMedia
+                            ? null
+                            : () async {
+                                if (!_remoteConnected) {
+                                  await _autoConnectToTrustedPc(forceDiscovery: true);
+                                }
+                                await _flushQueuedMedia();
+                              },
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: Text(
+                          _isFlushingMedia ? 'Mengirim...' : 'Kirim Sekarang',
+                          style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: _accentSoft),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               if (_fileTransferStatus.isNotEmpty) ...[
                 _FileTransferIndicator(
