@@ -128,3 +128,9 @@ temp/
 *.pem
 *.key
 *.crt
+
+# Local Registry Scripts (Contains Hardcoded Paths)
+install_menu.reg
+uninstall_menu.reg
+win11_classic_menu.reg
+win11_modern_menu_restore.reg
