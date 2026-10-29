@@ -229,10 +229,11 @@ export class SmartMpcServer {
   #server = null;
   #startedAt = null;
 
-  constructor({ config = loadOrCreateConfig(), requestLog = new RequestLog(), mediaWorker = null, onUploadProgress = null, onLinksReceived = null } = {}) {
+  constructor({ config = loadOrCreateConfig(), requestLog = new RequestLog(), mediaWorker = null, onUploadProgress = null, onLinksReceived = null, onUrlIntent = null } = {}) {
     this.#config = config;
     this.onUploadProgress = onUploadProgress;
     this.onLinksReceived = onLinksReceived;
+    this.onUrlIntent = onUrlIntent;
     this.#requestLog = requestLog;
     this.#controlServer = new ControlServer({ config: this.#config, requestLog: this.#requestLog });
     this.#discoveryServer = new DiscoveryServer({ config: this.#config, requestLog: this.#requestLog });
@@ -633,8 +634,13 @@ export class SmartMpcServer {
     if (type === "url") {
       const url = String(payload.url ?? "").trim();
       if (!url) throw new Error("Missing payload.url");
-      await openTarget(url);
-      return { action: "url", opened: url };
+      const autoLaunch = Boolean(payload.autoLaunch);
+      if (this.onUrlIntent) {
+        await this.onUrlIntent({ url, autoLaunch });
+      } else {
+        await openTarget(url);
+      }
+      return { action: "url", opened: autoLaunch ? url : null, autoLaunch };
     }
 
     if (type === "clipboard") {

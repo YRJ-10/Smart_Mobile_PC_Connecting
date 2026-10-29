@@ -766,7 +766,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (!_remoteConnected) {
         await _connectRemote(auto: true);
       }
-      if (mounted) {
+      if (mounted && _status != 'PC rejected authentication (Pair ulang)') {
         setState(() {
           _status = _remoteConnected
               ? 'Trusted PC connected'
@@ -1020,25 +1020,70 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     setState(() =>
         _remoteStatus = auto ? 'Auto connecting remote' : 'Connecting remote');
+    final authCompleter = Completer<bool>();
+    String incomingBuffer = '';
+
     try {
       final socket =
           await Socket.connect(host, 8080, timeout: const Duration(seconds: 5));
       socket.setOption(SocketOption.tcpNoDelay, true);
       socket.listen(
-        (_) {},
+        (data) {
+          incomingBuffer += utf8.decode(data);
+          while (incomingBuffer.contains('\n')) {
+            final index = incomingBuffer.indexOf('\n');
+            final line = incomingBuffer.substring(0, index).trim();
+            incomingBuffer = incomingBuffer.substring(index + 1);
+            if (line.isEmpty) continue;
+
+            try {
+              final msg = jsonDecode(line) as Map<String, dynamic>;
+              if (msg['ok'] == true && msg['event'] == 'control_ready') {
+                if (!authCompleter.isCompleted) authCompleter.complete(true);
+                if (mounted) {
+                  setState(() {
+                    _remoteConnected = true;
+                    _remoteStatus = 'Remote connected';
+                    _status = 'Trusted PC connected';
+                  });
+                  if (auto) _showTrustedConnectedNotice();
+                  unawaited(_flushQueuedLinks());
+                }
+              } else if (msg['ok'] == false) {
+                if (!authCompleter.isCompleted) authCompleter.complete(false);
+                if (mounted) {
+                  setState(() {
+                    _remoteConnected = false;
+                    _remoteStatus =
+                        'Auth failed: ${msg['error'] ?? 'Unauthorized'}';
+                    _status = 'PC rejected authentication (Pair ulang)';
+                  });
+                }
+              }
+            } catch (_) {}
+          }
+        },
         onDone: () {
+          if (!authCompleter.isCompleted) authCompleter.complete(false);
           if (mounted) {
             setState(() {
               _remoteConnected = false;
               _remoteStatus = 'Remote disconnected';
+              if (_status == 'Trusted PC connected') {
+                _status = 'PC disconnected';
+              }
             });
           }
         },
         onError: (Object error) {
+          if (!authCompleter.isCompleted) authCompleter.complete(false);
           if (mounted) {
             setState(() {
               _remoteConnected = false;
               _remoteStatus = 'Remote error: $error';
+              if (_status == 'Trusted PC connected') {
+                _status = 'PC disconnected';
+              }
             });
           }
         },
@@ -1052,20 +1097,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         'device_id': _deviceId,
         'device_token': _deviceToken,
       });
-      setState(() {
-        _remoteConnected = true;
-        _remoteStatus = 'Remote connected';
-        if (auto) _status = 'Trusted PC connected';
-      });
-      if (auto) _showTrustedConnectedNotice();
-      unawaited(_flushQueuedLinks());
+
+      final authSuccess = await authCompleter.future
+          .timeout(const Duration(seconds: 2), onTimeout: () => false);
+      if (!authSuccess && mounted && !_remoteConnected) {
+        _controlSocket?.destroy();
+        _controlSocket = null;
+      }
     } catch (error) {
-      setState(() {
-        _remoteConnected = false;
-        _remoteStatus = auto
-            ? 'Auto remote connect pending'
-            : 'Remote connect failed: $error';
-      });
+      if (mounted) {
+        setState(() {
+          _remoteConnected = false;
+          _remoteStatus = auto
+              ? 'Auto remote connect pending'
+              : 'Remote connect failed: $error';
+          _status = 'Trusted PC not reachable';
+        });
+      }
     }
   }
 
@@ -1076,6 +1124,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _remoteConnected = false;
       _trustedConnectNoticeShown = false;
       _remoteStatus = 'Remote disconnected';
+      if (_status == 'Trusted PC connected') {
+        _status = 'PC disconnected';
+      }
     });
   }
 
@@ -2156,16 +2207,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
               const SizedBox(height: 8),
               Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Checkbox(
-                    value: _autoLaunchChrome,
-                    onChanged: (val) => setState(() => _autoLaunchChrome = val ?? false),
-                  ),
                   const Expanded(
                     child: Text(
                       'Buka otomatis di Chrome PC (Profil Default)',
                       style: TextStyle(fontSize: 13, color: _mutedText),
                     ),
+                  ),
+                  Switch(
+                    value: _autoLaunchChrome,
+                    activeThumbColor: _accentSoft,
+                    onChanged: (val) => setState(() => _autoLaunchChrome = val),
                   ),
                 ],
               ),

@@ -82,8 +82,6 @@ function handleLinksReceived(links) {
   }
 }
 
-const server = new SmartMpcServer({ mediaWorker, onUploadProgress: handleUploadProgress, onLinksReceived: handleLinksReceived });
-
 function launchChromeDefault(url) {
   if (!url) return;
   const safeUrl = String(url).replace(/"/g, "%22");
@@ -95,6 +93,18 @@ function launchChromeDefault(url) {
     }
   });
 }
+
+const server = new SmartMpcServer({
+  mediaWorker,
+  onUploadProgress: handleUploadProgress,
+  onLinksReceived: handleLinksReceived,
+  onUrlIntent: async ({ url, autoLaunch }) => {
+    handleLinksReceived([url]);
+    if (autoLaunch) {
+      launchChromeDefault(url);
+    }
+  }
+});
 
 function showMemoWindow(memo) {
   const win = new BrowserWindow({
