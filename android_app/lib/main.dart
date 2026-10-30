@@ -1959,6 +1959,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     child: _StateChip(
                       label: _isTrusted ? 'Trusted' : 'Untrusted',
                       active: _isTrusted,
+                      connected: _remoteConnected,
                     ),
                   ),
                 ),
@@ -3588,14 +3589,20 @@ class _SectionCard extends StatelessWidget {
 }
 
 class _StateChip extends StatelessWidget {
-  const _StateChip({required this.label, required this.active});
+  const _StateChip({
+    required this.label,
+    required this.active,
+    this.connected = false,
+  });
 
   final String label;
   final bool active;
+  final bool connected;
 
   @override
   Widget build(BuildContext context) {
     final color = active ? _successSoft : _warningSoft;
+    final dotColor = connected ? const Color(0xFF4CAF50) : const Color(0xFFE53935);
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
@@ -3603,10 +3610,24 @@ class _StateChip extends StatelessWidget {
         border: Border.all(color: color.withValues(alpha: 0.72)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      child: Text(
-        label,
-        style:
-            TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: dotColor,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style:
+                TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
+          ),
+        ],
       ),
     );
   }
