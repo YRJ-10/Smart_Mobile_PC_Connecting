@@ -466,13 +466,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     } else if (call.method == 'deepLink') {
       await _handleDeepLink(call.arguments?.toString());
     } else if (call.method == 'linksQueued') {
-      if (_remoteConnected) {
-        await _flushQueuedLinks();
-      } else {
-        if (mounted) {
-          setState(() => _status = 'Link saved to queue (offline)');
-        }
-      }
+      await _flushQueuedLinks();
     }
     return null;
   }
@@ -574,6 +568,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         setState(() => _bootstrapping = false);
       }
     }
+    unawaited(_flushQueuedLinks());
     unawaited(_autoConnectToTrustedPc(forceDiscovery: true));
   }
 
