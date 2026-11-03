@@ -3,6 +3,8 @@ package com.smartmpc.app
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.widget.Toast
 import org.json.JSONArray
 import org.json.JSONObject
@@ -52,9 +54,7 @@ class ShareReceiverActivity : Activity() {
                     val responseCode = connection.responseCode
                     if (responseCode in 200..299) {
                         sentLocally = true
-                        runOnUiThread {
-                            Toast.makeText(appContext, "Link sent to PC", Toast.LENGTH_SHORT).show()
-                        }
+                        showToast("✓ Link berhasil dikirim ke PC")
                     }
                 } catch (e: Exception) {
                     sentLocally = false
@@ -68,8 +68,6 @@ class ShareReceiverActivity : Activity() {
     }
 
     private fun queueSharedText(text: String) {
-        val appContext = applicationContext
-
         // 1. Try pushing directly to Firestore queue
         val pushedToCloud = try {
             pushToFirestoreQueue(text)
@@ -79,29 +77,31 @@ class ShareReceiverActivity : Activity() {
         }
 
         if (pushedToCloud) {
-            runOnUiThread {
-                Toast.makeText(appContext, "Link dikirim ke antrean cloud (PC offline)", Toast.LENGTH_SHORT).show()
-            }
+            showToast("✓ Link berhasil dikirim ke PC")
             return
         }
 
         // 2. Fallback to local SharedPreferences if cloud push fails (e.g. no internet)
-        runOnUiThread {
-            val prefs = getSharedPreferences("smart_mpc", MODE_PRIVATE)
-            val currentQueue = prefs.getString("queued_links", "[]") ?: "[]"
-            try {
-                val array = JSONArray(currentQueue)
-                array.put(text)
-                prefs.edit().putString("queued_links", array.toString()).apply()
+        val prefs = getSharedPreferences("smart_mpc", MODE_PRIVATE)
+        val currentQueue = prefs.getString("queued_links", "[]") ?: "[]"
+        try {
+            val array = JSONArray(currentQueue)
+            array.put(text)
+            prefs.edit().putString("queued_links", array.toString()).apply()
 
-                Toast.makeText(appContext, "Link saved to queue (offline)", Toast.LENGTH_SHORT).show()
+            showToast("Link disimpan di antrean HP (offline)")
 
-                // Notify MainActivity if it's running
-                ShareEventBus.notifyLinksQueued(array.length())
-            } catch (e: Exception) {
-                e.printStackTrace()
-                Toast.makeText(appContext, "Failed to save link", Toast.LENGTH_SHORT).show()
-            }
+            // Notify MainActivity if it's running
+            ShareEventBus.notifyLinksQueued(array.length())
+        } catch (e: Exception) {
+            e.printStackTrace()
+            showToast("Gagal menyimpan link")
+        }
+    }
+
+    private fun showToast(message: String) {
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
         }
     }
 
