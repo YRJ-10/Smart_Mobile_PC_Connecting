@@ -1,10 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import 'media_state.dart';
 import 'webrtc_video_renderer.dart';
 
-class WebRtcMirrorView extends StatelessWidget {
+class WebRtcMirrorView extends StatefulWidget {
   const WebRtcMirrorView({
     super.key,
     required this.renderer,
@@ -12,6 +14,7 @@ class WebRtcMirrorView extends StatelessWidget {
     required this.mediaState,
     required this.onExit,
     required this.onRetry,
+    this.onSendCommand,
   });
 
   final RTCVideoRenderer renderer;
@@ -19,74 +22,427 @@ class WebRtcMirrorView extends StatelessWidget {
   final MediaState mediaState;
   final VoidCallback onExit;
   final VoidCallback onRetry;
+  final void Function(Map<String, Object?> command)? onSendCommand;
+
+  @override
+  State<WebRtcMirrorView> createState() => _WebRtcMirrorViewState();
+}
+
+class _WebRtcMirrorViewState extends State<WebRtcMirrorView> {
+  bool _touchControlEnabled = true;
+
+  final Map<int, Offset> _pointerPositions = {};
+  final Map<int, Offset> _pointerStartPositions = {};
+  int _peakPointerCount = 0;
+  DateTime _lastMoveTime = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _isDragging = false;
+  bool _isRightClickTriggered = false;
+  Timer? _longPressTimer;
+
+  Offset? _touchRipplePosition;
+  double _touchRippleOpacity = 0.0;
+  Timer? _rippleFadeTimer;
+
+  static const int _moveIntervalMillis = 16;
+  static const double _dragThreshold = 8.0;
+
+  @override
+  void dispose() {
+    _longPressTimer?.cancel();
+    _rippleFadeTimer?.cancel();
+    super.dispose();
+  }
+
+  Offset? _normalizeCoordinates(Offset localPosition, BoxConstraints constraints) {
+    final videoWidth = widget.renderState.width;
+    final videoHeight = widget.renderState.height;
+    final containerWidth = constraints.maxWidth;
+    final containerHeight = constraints.maxHeight;
+
+    if (videoWidth <= 0 || videoHeight <= 0 || containerWidth <= 0 || containerHeight <= 0) {
+      return null;
+    }
+
+    final videoAspectRatio = videoWidth / videoHeight;
+    final containerAspectRatio = containerWidth / containerHeight;
+
+    double displayedWidth;
+    double displayedHeight;
+    double offsetX = 0.0;
+    double offsetY = 0.0;
+
+    if (containerAspectRatio > videoAspectRatio) {
+      // Container is wider than video (pillarbox)
+      displayedHeight = containerHeight;
+      displayedWidth = containerHeight * videoAspectRatio;
+      offsetX = (containerWidth - displayedWidth) / 2.0;
+    } else {
+      // Container is taller than video (letterbox)
+      displayedWidth = containerWidth;
+      displayedHeight = containerWidth / videoAspectRatio;
+      offsetY = (containerHeight - displayedHeight) / 2.0;
+    }
+
+    final relX = localPosition.dx - offsetX;
+    final relY = localPosition.dy - offsetY;
+
+    // Check if within bounds of displayed video area
+    if (relX < -12.0 || relX > displayedWidth + 12.0 || relY < -12.0 || relY > displayedHeight + 12.0) {
+      return null;
+    }
+
+    final rx = (relX / displayedWidth).clamp(0.0, 1.0);
+    final ry = (relY / displayedHeight).clamp(0.0, 1.0);
+
+    return Offset(rx, ry);
+  }
+
+  void _triggerVisualRipple(Offset position) {
+    _rippleFadeTimer?.cancel();
+    setState(() {
+      _touchRipplePosition = position;
+      _touchRippleOpacity = 1.0;
+    });
+    _rippleFadeTimer = Timer(const Duration(milliseconds: 180), () {
+      if (mounted) {
+        setState(() => _touchRippleOpacity = 0.0);
+      }
+    });
+  }
+
+  void _onPointerDown(PointerDownEvent event, BoxConstraints constraints) {
+    if (!_touchControlEnabled || !widget.renderState.hasFrame || widget.onSendCommand == null) {
+      return;
+    }
+
+    final norm = _normalizeCoordinates(event.localPosition, constraints);
+    if (norm == null) return;
+
+    _pointerPositions[event.pointer] = event.localPosition;
+    _pointerStartPositions[event.pointer] = event.localPosition;
+    _peakPointerCount = _pointerPositions.length;
+
+    if (_pointerPositions.length == 1) {
+      _isDragging = false;
+      _isRightClickTriggered = false;
+      _triggerVisualRipple(event.localPosition);
+
+      // Start long-press timer for right-click
+      _longPressTimer?.cancel();
+      _longPressTimer = Timer(const Duration(milliseconds: 550), () {
+        if (!mounted) return;
+        if (_pointerPositions.length == 1 && !_isDragging && !_isRightClickTriggered) {
+          _isRightClickTriggered = true;
+          HapticFeedback.mediumImpact();
+          widget.onSendCommand?.call({'type': 'TOUCH_MOVE', 'rx': norm.dx, 'ry': norm.dy});
+          widget.onSendCommand?.call({'type': 'MOUSE_CLICK', 'button': 'right'});
+        }
+      });
+    } else if (_pointerPositions.length >= 2) {
+      _longPressTimer?.cancel();
+    }
+  }
+
+  void _onPointerMove(PointerMoveEvent event, BoxConstraints constraints) {
+    if (!_touchControlEnabled || !widget.renderState.hasFrame || widget.onSendCommand == null) {
+      return;
+    }
+
+    if (!_pointerPositions.containsKey(event.pointer)) return;
+    _pointerPositions[event.pointer] = event.localPosition;
+
+    if (_pointerPositions.length == 1 && !_isRightClickTriggered) {
+      final startPos = _pointerStartPositions[event.pointer];
+      if (startPos != null) {
+        final dist = (event.localPosition - startPos).distance;
+        if (dist > _dragThreshold) {
+          _longPressTimer?.cancel();
+          if (!_isDragging) {
+            _isDragging = true;
+            final startNorm = _normalizeCoordinates(startPos, constraints);
+            final currentNorm = _normalizeCoordinates(event.localPosition, constraints);
+            if (startNorm != null) {
+              // 1. Move exactly to initial touch spot where user pressed
+              widget.onSendCommand?.call({'type': 'TOUCH_MOVE', 'rx': startNorm.dx, 'ry': startNorm.dy});
+              // 2. Press left mouse button down at initial touch spot
+              widget.onSendCommand?.call({'type': 'TOUCH_DOWN', 'rx': startNorm.dx, 'ry': startNorm.dy});
+            }
+            if (currentNorm != null) {
+              // 3. Move cursor to current drag position
+              widget.onSendCommand?.call({'type': 'TOUCH_MOVE', 'rx': currentNorm.dx, 'ry': currentNorm.dy});
+            }
+            _lastMoveTime = DateTime.now();
+          }
+        }
+      }
+
+      if (_isDragging) {
+        final now = DateTime.now();
+        if (now.difference(_lastMoveTime).inMilliseconds >= _moveIntervalMillis) {
+          final norm = _normalizeCoordinates(event.localPosition, constraints);
+          if (norm != null) {
+            widget.onSendCommand?.call({'type': 'TOUCH_MOVE', 'rx': norm.dx, 'ry': norm.dy});
+          }
+          _lastMoveTime = now;
+        }
+      }
+    } else if (_pointerPositions.length >= 2) {
+      // Two-finger scroll
+      _longPressTimer?.cancel();
+      final now = DateTime.now();
+      if (now.difference(_lastMoveTime).inMilliseconds >= _moveIntervalMillis) {
+        final dy = event.delta.dy;
+        if (dy.abs() > 0.3) {
+          widget.onSendCommand?.call({'type': 'SCROLL', 'dy': -dy * 0.5});
+        }
+        _lastMoveTime = now;
+      }
+    }
+  }
+
+  void _onPointerUp(PointerUpEvent event, BoxConstraints constraints) {
+    _longPressTimer?.cancel();
+
+    if (!_touchControlEnabled || !widget.renderState.hasFrame || widget.onSendCommand == null) {
+      _cleanupPointer(event.pointer);
+      return;
+    }
+
+    final startPos = _pointerStartPositions[event.pointer];
+    final norm = _normalizeCoordinates(event.localPosition, constraints);
+
+    if (_isRightClickTriggered) {
+      // Handled by long-press
+    } else if (_peakPointerCount >= 2 && startPos != null) {
+      // Two-finger tap for right-click
+      final dist = (event.localPosition - startPos).distance;
+      if (dist < 20.0 && !_isDragging) {
+        _isRightClickTriggered = true;
+        HapticFeedback.mediumImpact();
+        if (norm != null) {
+          widget.onSendCommand?.call({'type': 'TOUCH_MOVE', 'rx': norm.dx, 'ry': norm.dy});
+          widget.onSendCommand?.call({'type': 'MOUSE_CLICK', 'button': 'right'});
+        }
+      }
+    } else if (_isDragging) {
+      // Finish drag
+      if (norm != null) {
+        widget.onSendCommand?.call({'type': 'TOUCH_MOVE', 'rx': norm.dx, 'ry': norm.dy});
+        widget.onSendCommand?.call({'type': 'TOUCH_UP', 'rx': norm.dx, 'ry': norm.dy});
+      } else {
+        widget.onSendCommand?.call({'type': 'TOUCH_UP'});
+      }
+    } else if (_peakPointerCount == 1 && startPos != null && norm != null) {
+      // Single tap (click at exact spot)
+      final dist = (event.localPosition - startPos).distance;
+      if (dist < _dragThreshold) {
+        widget.onSendCommand?.call({'type': 'TOUCH_DOWN', 'rx': norm.dx, 'ry': norm.dy});
+        widget.onSendCommand?.call({'type': 'TOUCH_UP', 'rx': norm.dx, 'ry': norm.dy});
+      }
+    }
+
+    _cleanupPointer(event.pointer);
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    _longPressTimer?.cancel();
+    if (_isDragging) {
+      widget.onSendCommand?.call({'type': 'TOUCH_UP'});
+    }
+    _cleanupPointer(event.pointer);
+  }
+
+  void _cleanupPointer(int pointer) {
+    _pointerPositions.remove(pointer);
+    _pointerStartPositions.remove(pointer);
+    if (_pointerPositions.isEmpty) {
+      _peakPointerCount = 0;
+      _isDragging = false;
+      _isRightClickTriggered = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final waiting =
-        renderState.phase == WebRtcVideoRenderPhase.waitingForFrame ||
-            mediaState.videoPhase == MediaTrackPhase.starting;
-    final failed = renderState.phase == WebRtcVideoRenderPhase.failed ||
-        mediaState.videoPhase == MediaTrackPhase.failed;
+        widget.renderState.phase == WebRtcVideoRenderPhase.waitingForFrame ||
+            widget.mediaState.videoPhase == MediaTrackPhase.starting;
+    final failed = widget.renderState.phase == WebRtcVideoRenderPhase.failed ||
+        widget.mediaState.videoPhase == MediaTrackPhase.failed;
 
     return ColoredBox(
       color: Colors.black,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (renderState.phase == WebRtcVideoRenderPhase.waitingForFrame ||
-              renderState.phase == WebRtcVideoRenderPhase.rendering)
-            RTCVideoView(
-              renderer,
-              mirror: false,
-              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
-              filterQuality: FilterQuality.low,
-            ),
-          if (waiting && !renderState.hasFrame)
-            const _MirrorMessage(
-              icon: CircularProgressIndicator(
-                color: Color(0xFFEF4444),
-                strokeWidth: 3,
-              ),
-              label: 'Connecting mirror',
-            ),
-          if (failed)
-            _MirrorFailure(
-              message: renderState.error ??
-                  mediaState.error ??
-                  'Mirror connection failed',
-              onRetry: onRetry,
-            ),
-          Positioned(
-            top: 20,
-            left: 20,
-            child: SafeArea(
-              child: DecoratedBox(
-                decoration: const BoxDecoration(
-                  color: Colors.black54,
-                  shape: BoxShape.circle,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              if (widget.renderState.phase == WebRtcVideoRenderPhase.waitingForFrame ||
+                  widget.renderState.phase == WebRtcVideoRenderPhase.rendering)
+                RTCVideoView(
+                  widget.renderer,
+                  mirror: false,
+                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                  filterQuality: FilterQuality.low,
                 ),
-                child: Tooltip(
-                  message: 'Back',
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
-                    onPressed: onExit,
+
+              // Direct Touch Control Overlay
+              if (widget.renderState.hasFrame)
+                Positioned.fill(
+                  child: Listener(
+                    behavior: HitTestBehavior.translucent,
+                    onPointerDown: (e) => _onPointerDown(e, constraints),
+                    onPointerMove: (e) => _onPointerMove(e, constraints),
+                    onPointerUp: (e) => _onPointerUp(e, constraints),
+                    onPointerCancel: _onPointerCancel,
+                  ),
+                ),
+
+              // Visual Touch Feedback Ripple
+              if (_touchRipplePosition != null && _touchControlEnabled)
+                Positioned(
+                  left: _touchRipplePosition!.dx - 18,
+                  top: _touchRipplePosition!.dy - 18,
+                  child: IgnorePointer(
+                    child: AnimatedOpacity(
+                      opacity: _touchRippleOpacity,
+                      duration: const Duration(milliseconds: 200),
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: const Color(0xFF8EDFD1).withValues(alpha: 0.22),
+                          border: Border.all(
+                            color: const Color(0xFF8EDFD1).withValues(alpha: 0.7),
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+              if (waiting && !widget.renderState.hasFrame)
+                const _MirrorMessage(
+                  icon: CircularProgressIndicator(
+                    color: Color(0xFFEF4444),
+                    strokeWidth: 3,
+                  ),
+                  label: 'Connecting mirror',
+                ),
+
+              if (failed)
+                _MirrorFailure(
+                  message: widget.renderState.error ??
+                      widget.mediaState.error ??
+                      'Mirror connection failed',
+                  onRetry: widget.onRetry,
+                ),
+
+              // Top Left: Back Button
+              Positioned(
+                top: 20,
+                left: 20,
+                child: SafeArea(
+                  child: DecoratedBox(
+                    decoration: const BoxDecoration(
+                      color: Colors.black54,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Tooltip(
+                      message: 'Back',
+                      child: IconButton(
+                        icon: const Icon(Icons.arrow_back, color: Colors.white),
+                        onPressed: widget.onExit,
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
-          Positioned(
-            top: 20,
-            right: 20,
-            child: SafeArea(
-              child: _MirrorStatus(
-                connected: renderState.hasFrame,
-                width: renderState.width,
-                height: renderState.height,
+
+              // Top Right: Touch Control Toggle + Mirror Status
+              Positioned(
+                top: 20,
+                right: 20,
+                child: SafeArea(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (widget.renderState.hasFrame) ...[
+                        _TouchToggle(
+                          enabled: _touchControlEnabled,
+                          onToggle: () {
+                            setState(() => _touchControlEnabled = !_touchControlEnabled);
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      _MirrorStatus(
+                        connected: widget.renderState.hasFrame,
+                        width: widget.renderState.width,
+                        height: widget.renderState.height,
+                      ),
+                    ],
+                  ),
+                ),
               ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _TouchToggle extends StatelessWidget {
+  const _TouchToggle({
+    required this.enabled,
+    required this.onToggle,
+  });
+
+  final bool enabled;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.54),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: enabled ? const Color(0xFF86EFAC) : Colors.white24,
+          width: 1.2,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onToggle,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  enabled ? Icons.touch_app_rounded : Icons.pan_tool_rounded,
+                  color: enabled ? const Color(0xFF86EFAC) : Colors.white54,
+                  size: 16,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  enabled ? 'Touch ON' : 'Touch OFF',
+                  style: TextStyle(
+                    color: enabled ? Colors.white : Colors.white60,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }

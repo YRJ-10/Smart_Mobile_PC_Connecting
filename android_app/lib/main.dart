@@ -1783,7 +1783,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _setTabIndex(int index) async {
     if (index < _actionsTab || index > _connectTab) return;
 
-    if (index == _remoteTab || index == _mediaTab) {
+    if (index == _remoteTab || index == _mediaTab || index == _mirrorTab) {
       unawaited(_autoConnectToTrustedPc());
     }
 
@@ -3233,6 +3233,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           unawaited(_queueMediaRuntime(lifecycle.retry));
         }
       },
+      onSendCommand: _sendRemoteCommand,
     );
   }
 }
