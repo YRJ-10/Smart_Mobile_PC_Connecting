@@ -48,6 +48,16 @@ class _WebRtcMirrorViewState extends State<WebRtcMirrorView> {
   final FocusNode _keyboardFocusNode = FocusNode();
   String _lastTypedText = '';
 
+  double _scale = 1.0;
+  Offset _panOffset = Offset.zero;
+  double _initialPinchDistance = 0.0;
+  double _initialScale = 1.0;
+  Offset _initialPinchMidpoint = Offset.zero;
+  Offset _initialPanOffset = Offset.zero;
+  bool _isPinchGesture = false;
+  DateTime? _lastTapTime;
+  Offset? _lastTapPosition;
+
   static const int _moveIntervalMillis = 16;
   static const double _dragThreshold = 8.0;
 
@@ -136,8 +146,13 @@ class _WebRtcMirrorViewState extends State<WebRtcMirrorView> {
       offsetY = (containerHeight - displayedHeight) / 2.0;
     }
 
-    final relX = localPosition.dx - offsetX;
-    final relY = localPosition.dy - offsetY;
+    final containerCenter = Offset(containerWidth / 2.0, containerHeight / 2.0);
+    final untransformedPosition = _scale > 1.001
+        ? (localPosition - containerCenter - _panOffset) / _scale + containerCenter
+        : localPosition;
+
+    final relX = untransformedPosition.dx - offsetX;
+    final relY = untransformedPosition.dy - offsetY;
 
     // Check if within bounds of displayed video area
     if (relX < -12.0 || relX > displayedWidth + 12.0 || relY < -12.0 || relY > displayedHeight + 12.0) {
@@ -184,7 +199,7 @@ class _WebRtcMirrorViewState extends State<WebRtcMirrorView> {
       _longPressTimer?.cancel();
       _longPressTimer = Timer(const Duration(milliseconds: 550), () {
         if (!mounted) return;
-        if (_pointerPositions.length == 1 && !_isDragging && !_isRightClickTriggered) {
+        if (_pointerPositions.length == 1 && !_isDragging && !_isRightClickTriggered && !_isPinchGesture) {
           _isRightClickTriggered = true;
           HapticFeedback.mediumImpact();
           widget.onSendCommand?.call({'type': 'TOUCH_MOVE', 'rx': norm.dx, 'ry': norm.dy});
@@ -193,6 +208,12 @@ class _WebRtcMirrorViewState extends State<WebRtcMirrorView> {
       });
     } else if (_pointerPositions.length >= 2) {
       _longPressTimer?.cancel();
+      final points = _pointerPositions.values.toList();
+      _initialPinchDistance = (points[0] - points[1]).distance;
+      _initialScale = _scale;
+      _initialPinchMidpoint = (points[0] + points[1]) / 2.0;
+      _initialPanOffset = _panOffset;
+      _isPinchGesture = false;
     }
   }
 
@@ -204,7 +225,7 @@ class _WebRtcMirrorViewState extends State<WebRtcMirrorView> {
     if (!_pointerPositions.containsKey(event.pointer)) return;
     _pointerPositions[event.pointer] = event.localPosition;
 
-    if (_pointerPositions.length == 1 && !_isRightClickTriggered) {
+    if (_pointerPositions.length == 1 && !_isRightClickTriggered && !_isPinchGesture) {
       final startPos = _pointerStartPositions[event.pointer];
       if (startPos != null) {
         final dist = (event.localPosition - startPos).distance;
@@ -240,15 +261,52 @@ class _WebRtcMirrorViewState extends State<WebRtcMirrorView> {
         }
       }
     } else if (_pointerPositions.length >= 2) {
-      // Two-finger scroll
       _longPressTimer?.cancel();
-      final now = DateTime.now();
-      if (now.difference(_lastMoveTime).inMilliseconds >= _moveIntervalMillis) {
-        final dy = event.delta.dy;
-        if (dy.abs() > 0.3) {
-          widget.onSendCommand?.call({'type': 'SCROLL', 'dy': -dy * 0.5});
+      final points = _pointerPositions.values.toList();
+      final currentDistance = (points[0] - points[1]).distance;
+      final currentMidpoint = (points[0] + points[1]) / 2.0;
+      final deltaDistance = (currentDistance - _initialPinchDistance).abs();
+
+      if (_isPinchGesture || deltaDistance > 14.0 || _scale > 1.05) {
+        if (!_isPinchGesture && deltaDistance > 14.0) {
+          _isPinchGesture = true;
         }
-        _lastMoveTime = now;
+
+        final containerWidth = constraints.maxWidth;
+        final containerHeight = constraints.maxHeight;
+
+        double targetScale = _scale;
+        if (_initialPinchDistance > 10.0) {
+          targetScale = (_initialScale * (currentDistance / _initialPinchDistance)).clamp(1.0, 4.0);
+        }
+
+        final panDelta = currentMidpoint - _initialPinchMidpoint;
+        final candidatePan = _initialPanOffset + panDelta;
+
+        final maxPanX = (containerWidth * (targetScale - 1.0)) / 2.0;
+        final maxPanY = (containerHeight * (targetScale - 1.0)) / 2.0;
+
+        final clampedPan = targetScale <= 1.05
+            ? Offset.zero
+            : Offset(
+                candidatePan.dx.clamp(-maxPanX, maxPanX),
+                candidatePan.dy.clamp(-maxPanY, maxPanY),
+              );
+
+        setState(() {
+          _scale = targetScale <= 1.05 ? 1.0 : targetScale;
+          _panOffset = clampedPan;
+        });
+      } else {
+        // Two-finger scroll on PC
+        final now = DateTime.now();
+        if (now.difference(_lastMoveTime).inMilliseconds >= _moveIntervalMillis) {
+          final dy = event.delta.dy;
+          if (dy.abs() > 0.3) {
+            widget.onSendCommand?.call({'type': 'SCROLL', 'dy': -dy * 0.5});
+          }
+          _lastMoveTime = now;
+        }
       }
     }
   }
@@ -266,7 +324,7 @@ class _WebRtcMirrorViewState extends State<WebRtcMirrorView> {
 
     if (_isRightClickTriggered) {
       // Handled by long-press
-    } else if (_peakPointerCount >= 2 && startPos != null) {
+    } else if (_peakPointerCount >= 2 && startPos != null && !_isPinchGesture) {
       // Two-finger tap for right-click
       final dist = (event.localPosition - startPos).distance;
       if (dist < 20.0 && !_isDragging) {
@@ -285,12 +343,40 @@ class _WebRtcMirrorViewState extends State<WebRtcMirrorView> {
       } else {
         widget.onSendCommand?.call({'type': 'TOUCH_UP'});
       }
-    } else if (_peakPointerCount == 1 && startPos != null && norm != null) {
-      // Single tap (click at exact spot)
+    } else if (_peakPointerCount == 1 && startPos != null && norm != null && !_isPinchGesture) {
+      // Single tap or double-tap
       final dist = (event.localPosition - startPos).distance;
       if (dist < _dragThreshold) {
-        widget.onSendCommand?.call({'type': 'TOUCH_DOWN', 'rx': norm.dx, 'ry': norm.dy});
-        widget.onSendCommand?.call({'type': 'TOUCH_UP', 'rx': norm.dx, 'ry': norm.dy});
+        final now = DateTime.now();
+        if (_lastTapTime != null &&
+            now.difference(_lastTapTime!).inMilliseconds < 300 &&
+            _lastTapPosition != null &&
+            (event.localPosition - _lastTapPosition!).distance < 30.0) {
+          // Double-tap zoom toggle
+          _lastTapTime = null;
+          _lastTapPosition = null;
+          setState(() {
+            if (_scale > 1.2) {
+              _scale = 1.0;
+              _panOffset = Offset.zero;
+            } else {
+              _scale = 2.0;
+              final containerCenter = Offset(constraints.maxWidth / 2.0, constraints.maxHeight / 2.0);
+              final focalOffset = containerCenter - event.localPosition;
+              final maxPanX = (constraints.maxWidth * (_scale - 1.0)) / 2.0;
+              final maxPanY = (constraints.maxHeight * (_scale - 1.0)) / 2.0;
+              _panOffset = Offset(
+                (focalOffset.dx * 1.0).clamp(-maxPanX, maxPanX),
+                (focalOffset.dy * 1.0).clamp(-maxPanY, maxPanY),
+              );
+            }
+          });
+        } else {
+          _lastTapTime = now;
+          _lastTapPosition = event.localPosition;
+          widget.onSendCommand?.call({'type': 'TOUCH_DOWN', 'rx': norm.dx, 'ry': norm.dy});
+          widget.onSendCommand?.call({'type': 'TOUCH_UP', 'rx': norm.dx, 'ry': norm.dy});
+        }
       }
     }
 
@@ -312,6 +398,7 @@ class _WebRtcMirrorViewState extends State<WebRtcMirrorView> {
       _peakPointerCount = 0;
       _isDragging = false;
       _isRightClickTriggered = false;
+      _isPinchGesture = false;
     }
   }
 
@@ -332,11 +419,19 @@ class _WebRtcMirrorViewState extends State<WebRtcMirrorView> {
             children: [
               if (widget.renderState.phase == WebRtcVideoRenderPhase.waitingForFrame ||
                   widget.renderState.phase == WebRtcVideoRenderPhase.rendering)
-                RTCVideoView(
-                  widget.renderer,
-                  mirror: false,
-                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
-                  filterQuality: FilterQuality.low,
+                ClipRect(
+                  child: Transform(
+                    alignment: Alignment.center,
+                    transform: Matrix4.identity()
+                      ..translate(_panOffset.dx, _panOffset.dy)
+                      ..scale(_scale),
+                    child: RTCVideoView(
+                      widget.renderer,
+                      mirror: false,
+                      objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                      filterQuality: FilterQuality.low,
+                    ),
+                  ),
                 ),
 
               // Direct Touch Control Overlay
@@ -423,6 +518,18 @@ class _WebRtcMirrorViewState extends State<WebRtcMirrorView> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (widget.renderState.hasFrame) ...[
+                        if (_scale > 1.05) ...[
+                          _ZoomReset(
+                            scale: _scale,
+                            onReset: () {
+                              setState(() {
+                                _scale = 1.0;
+                                _panOffset = Offset.zero;
+                              });
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                        ],
                         _TouchToggle(
                           enabled: _touchControlEnabled,
                           onToggle: () {
@@ -796,6 +903,59 @@ class _MirrorStatus extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ZoomReset extends StatelessWidget {
+  const _ZoomReset({
+    required this.scale,
+    required this.onReset,
+  });
+
+  final double scale;
+  final VoidCallback onReset;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xE60284C7),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black45,
+            blurRadius: 8,
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onReset,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.zoom_in_rounded, color: Colors.white, size: 16),
+                const SizedBox(width: 4),
+                Text(
+                  '${scale.toStringAsFixed(1)}x',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Icon(Icons.restart_alt_rounded, color: Colors.white70, size: 15),
+              ],
+            ),
+          ),
         ),
       ),
     );
