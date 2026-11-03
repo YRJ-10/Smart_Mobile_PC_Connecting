@@ -43,6 +43,11 @@ class _WebRtcMirrorViewState extends State<WebRtcMirrorView> {
   double _touchRippleOpacity = 0.0;
   Timer? _rippleFadeTimer;
 
+  bool _keyboardOpen = false;
+  final TextEditingController _textController = TextEditingController();
+  final FocusNode _keyboardFocusNode = FocusNode();
+  String _lastTypedText = '';
+
   static const int _moveIntervalMillis = 16;
   static const double _dragThreshold = 8.0;
 
@@ -50,7 +55,55 @@ class _WebRtcMirrorViewState extends State<WebRtcMirrorView> {
   void dispose() {
     _longPressTimer?.cancel();
     _rippleFadeTimer?.cancel();
+    _textController.dispose();
+    _keyboardFocusNode.dispose();
     super.dispose();
+  }
+
+  void _onLiveTextChanged(String value) {
+    if (value == _lastTypedText) return;
+
+    var commonLen = 0;
+    final minLen = value.length < _lastTypedText.length
+        ? value.length
+        : _lastTypedText.length;
+    while (commonLen < minLen && value[commonLen] == _lastTypedText[commonLen]) {
+      commonLen += 1;
+    }
+
+    final backspacesNeeded = _lastTypedText.length - commonLen;
+    for (var i = 0; i < backspacesNeeded; i += 1) {
+      widget.onSendCommand?.call({'type': 'SPECIAL_KEY', 'key': 'backspace'});
+    }
+
+    final added = value.substring(commonLen);
+    if (added.isNotEmpty) {
+      widget.onSendCommand?.call({
+        'type': 'TYPE_TEXT',
+        'text': added,
+      });
+    }
+
+    _lastTypedText = value;
+  }
+
+  void _sendSpecialKey(String key) {
+    widget.onSendCommand?.call({'type': 'SPECIAL_KEY', 'key': key});
+  }
+
+  void _toggleKeyboard() {
+    setState(() {
+      _keyboardOpen = !_keyboardOpen;
+      if (_keyboardOpen) {
+        _lastTypedText = '';
+        _textController.clear();
+        _keyboardFocusNode.requestFocus();
+      } else {
+        _keyboardFocusNode.unfocus();
+        _textController.clear();
+        _lastTypedText = '';
+      }
+    });
   }
 
   Offset? _normalizeCoordinates(Offset localPosition, BoxConstraints constraints) {
@@ -377,6 +430,11 @@ class _WebRtcMirrorViewState extends State<WebRtcMirrorView> {
                           },
                         ),
                         const SizedBox(width: 8),
+                        _KeyboardToggle(
+                          enabled: _keyboardOpen,
+                          onToggle: _toggleKeyboard,
+                        ),
+                        const SizedBox(width: 8),
                       ],
                       _MirrorStatus(
                         connected: widget.renderState.hasFrame,
@@ -387,9 +445,201 @@ class _WebRtcMirrorViewState extends State<WebRtcMirrorView> {
                   ),
                 ),
               ),
+
+              if (_keyboardOpen && widget.renderState.hasFrame)
+                _buildKeyboardPanel(context),
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildKeyboardPanel(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return Positioned(
+      left: 12,
+      right: 12,
+      bottom: bottomInset > 0 ? bottomInset + 8 : 16,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xE61E293B),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF38BDF8), width: 1.2),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black54,
+                blurRadius: 16,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _keyChip('Enter', Icons.keyboard_return_rounded, () => _sendSpecialKey('enter')),
+                    _keyChip('Bksp', Icons.backspace_rounded, () => _sendSpecialKey('backspace')),
+                    _keyChip('Alt+Tab', Icons.compare_arrows_rounded, () => _sendSpecialKey('alttab')),
+                    _keyChip('Copy', Icons.content_copy_rounded, () => _sendSpecialKey('copy')),
+                    _keyChip('Paste', Icons.content_paste_rounded, () => _sendSpecialKey('paste')),
+                    _keyChip('Refresh', Icons.refresh_rounded, () => _sendSpecialKey('f5')),
+                    _keyChip('←', Icons.arrow_back_rounded, () => _sendSpecialKey('left')),
+                    _keyChip('→', Icons.arrow_forward_rounded, () => _sendSpecialKey('right')),
+                    _keyChip('↑', Icons.arrow_upward_rounded, () => _sendSpecialKey('up')),
+                    _keyChip('↓', Icons.arrow_downward_rounded, () => _sendSpecialKey('down')),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 42,
+                      child: TextField(
+                        controller: _textController,
+                        focusNode: _keyboardFocusNode,
+                        autofocus: true,
+                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                        textInputAction: TextInputAction.send,
+                        decoration: InputDecoration(
+                          hintText: 'Ketik teks ke PC...',
+                          hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                          filled: true,
+                          fillColor: const Color(0xFF0F172A),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide.none,
+                          ),
+                          suffixIcon: _textController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear_rounded, size: 16, color: Colors.white54),
+                                  onPressed: () {
+                                    _textController.clear();
+                                    _lastTypedText = '';
+                                    setState(() {});
+                                  },
+                                )
+                              : null,
+                        ),
+                        onChanged: (val) {
+                          _onLiveTextChanged(val);
+                          setState(() {});
+                        },
+                        onSubmitted: (_) {
+                          _sendSpecialKey('enter');
+                          _textController.clear();
+                          _lastTypedText = '';
+                          setState(() {});
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  IconButton(
+                    tooltip: 'Tutup Keyboard',
+                    icon: const Icon(Icons.keyboard_hide_rounded, color: Colors.white70),
+                    onPressed: _toggleKeyboard,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _keyChip(String label, IconData icon, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: const Color(0xFF334155),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Colors.white12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 13, color: const Color(0xFF38BDF8)),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _KeyboardToggle extends StatelessWidget {
+  const _KeyboardToggle({
+    required this.enabled,
+    required this.onToggle,
+  });
+
+  final bool enabled;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.54),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: enabled ? const Color(0xFF38BDF8) : Colors.white24,
+          width: 1.2,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onToggle,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.keyboard_rounded,
+                  color: enabled ? const Color(0xFF38BDF8) : Colors.white54,
+                  size: 16,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Keyboard',
+                  style: TextStyle(
+                    color: enabled ? Colors.white : Colors.white60,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
