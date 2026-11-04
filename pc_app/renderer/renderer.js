@@ -21,6 +21,9 @@ const deviceList = document.querySelector("#deviceList");
 const deviceCount = document.querySelector("#deviceCount");
 const logList = document.querySelector("#logList");
 const logCount = document.querySelector("#logCount");
+const sendLinkInput = document.querySelector("#sendLinkInput");
+const sendLinkButton = document.querySelector("#sendLinkButton");
+const sendLinkFeedback = document.querySelector("#sendLinkFeedback");
 
 let currentState = null;
 let startupSettings = null;
@@ -266,6 +269,19 @@ const clearLinksButton = document.querySelector("#clearLinksButton");
 
 let savedLinks = [];
 
+function formatLinkTimestamp(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (date.toDateString() === now.toDateString()) {
+    return `Hari ini, ${timeStr}`;
+  }
+  const dateStr = date.toLocaleDateString([], { day: "numeric", month: "short" });
+  return `${dateStr}, ${timeStr}`;
+}
+
 function normalizeLinkItem(item) {
   if (typeof item === "string") {
     return {
@@ -353,6 +369,14 @@ function renderLinks() {
       }
     }
 
+    if (item.createdAt) {
+      const timeSpan = document.createElement("span");
+      timeSpan.className = "link-time";
+      timeSpan.textContent = formatLinkTimestamp(item.createdAt);
+      timeSpan.title = new Date(item.createdAt).toLocaleString();
+      badges.append(timeSpan);
+    }
+
     content.append(text, badges);
 
     const actions = document.createElement("div");
@@ -416,6 +440,61 @@ clearLinksButton.addEventListener("click", () => {
   saveLinks();
   renderLinks();
 });
+
+let sendLinkTimeout = null;
+
+function showSendLinkFeedback(text, type = "success") {
+  if (!sendLinkFeedback) return;
+  if (sendLinkTimeout) clearTimeout(sendLinkTimeout);
+  sendLinkFeedback.textContent = text;
+  sendLinkFeedback.className = `send-link-feedback ${type}`;
+  sendLinkTimeout = setTimeout(() => {
+    sendLinkFeedback.className = "send-link-feedback hidden";
+    sendLinkFeedback.textContent = "";
+  }, 4000);
+}
+
+async function handleSendLink() {
+  if (!sendLinkInput || !sendLinkButton) return;
+  const url = sendLinkInput.value.trim();
+  if (!url) {
+    showSendLinkFeedback("Tautan tidak boleh kosong", "error");
+    sendLinkInput.focus();
+    return;
+  }
+
+  sendLinkButton.disabled = true;
+  sendLinkButton.textContent = "Mengirim...";
+
+  try {
+    const res = await api.sendLinkToPhone(url);
+    if (res?.ok) {
+      sendLinkInput.value = "";
+      const via = res.viaLan && res.viaCloud
+        ? "LAN & Cloud"
+        : res.viaLan
+        ? "LAN"
+        : "Cloud";
+      showSendLinkFeedback(`✓ Tautan berhasil dikirim ke HP (${via})`, "success");
+    } else {
+      showSendLinkFeedback(res?.error || "Gagal mengirim tautan", "error");
+    }
+  } catch (err) {
+    showSendLinkFeedback("Error: " + (err.message || err), "error");
+  } finally {
+    sendLinkButton.disabled = false;
+    sendLinkButton.textContent = "Kirim";
+  }
+}
+
+if (sendLinkButton && sendLinkInput) {
+  sendLinkButton.addEventListener("click", handleSendLink);
+  sendLinkInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      handleSendLink();
+    }
+  });
+}
 
 loadLinks();
 refresh();

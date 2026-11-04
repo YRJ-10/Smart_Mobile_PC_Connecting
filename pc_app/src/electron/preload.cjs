@@ -12,5 +12,6 @@ contextBridge.exposeInMainWorld("smartMpc", {
   openInbox: () => ipcRenderer.invoke("ui:openInbox"),
   openOutbox: () => ipcRenderer.invoke("ui:openOutbox"),
   addFilesToOutbox: () => ipcRenderer.invoke("ui:addFilesToOutbox"),
+  sendLinkToPhone: (url) => ipcRenderer.invoke("server:sendLinkToPhone", url),
   onLinksReceived: (callback) => ipcRenderer.on("links", (_event, links) => callback(links))
 });

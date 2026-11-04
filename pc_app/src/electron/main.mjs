@@ -503,3 +503,45 @@ ipcMain.handle("ui:addFilesToOutbox", async () => {
   if (selection.canceled) return { state: server.state(), copied: [] };
   return server.addFilesToOutbox(selection.filePaths);
 });
+
+ipcMain.handle("server:sendLinkToPhone", async (_event, rawUrl) => {
+  const url = String(rawUrl ?? "").trim();
+  if (!url) {
+    return { ok: false, error: "Tautan tidak boleh kosong" };
+  }
+
+  let targetUrl = url;
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(targetUrl)) {
+    targetUrl = "https://" + targetUrl;
+  }
+
+  let sentViaLan = false;
+  let sentViaCloud = false;
+
+  try {
+    if (server.running) {
+      server.broadcastControl({
+        type: "RECEIVE_LINK",
+        url: targetUrl
+      });
+      sentViaLan = true;
+    }
+  } catch (lanErr) {
+    console.warn("[SendLink] LAN broadcast error:", lanErr.message);
+  }
+
+  if (firebaseSync.db) {
+    try {
+      await firebaseSync.sendLinkToPhone(targetUrl);
+      sentViaCloud = true;
+    } catch (cloudErr) {
+      console.warn("[SendLink] Cloud push error:", cloudErr.message);
+    }
+  }
+
+  if (!sentViaLan && !sentViaCloud) {
+    return { ok: false, error: "Gagal mengirim link (koneksi LAN & Cloud tidak tersedia)" };
+  }
+
+  return { ok: true, viaLan: sentViaLan, viaCloud: sentViaCloud };
+});

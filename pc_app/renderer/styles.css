@@ -418,6 +418,13 @@ span,
   border: 1px solid rgba(101, 214, 166, 0.3);
 }
 
+.link-time {
+  color: #8e9ea6;
+  font-size: 11px;
+  line-height: 1.4;
+  margin-left: 2px;
+}
+
 .link-actions {
   display: flex;
   gap: 6px;
@@ -470,6 +477,70 @@ span,
 
 .empty.compact {
   padding: 10px;
+}
+
+.send-link-panel p {
+  line-height: 1.4;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.send-link-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.send-link-form input {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  background: #182026;
+  border: 1px solid #334047;
+  border-radius: 6px;
+  color: #e8edf0;
+  font: inherit;
+  font-size: 13px;
+  padding: 0 10px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.send-link-form input:focus {
+  border-color: #8edfd1;
+}
+
+.send-link-form button {
+  flex-shrink: 0;
+  background: #202b31;
+  border-color: #38464f;
+  color: #8edfd1;
+  font-weight: 600;
+}
+
+.send-link-form button:hover {
+  background: #26343c;
+  border-color: #8edfd1;
+}
+
+.send-link-feedback {
+  margin-top: 10px;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  line-height: 1.4;
+}
+
+.send-link-feedback.success {
+  background: rgba(101, 214, 166, 0.12);
+  color: #65d6a6;
+  border: 1px solid rgba(101, 214, 166, 0.3);
+}
+
+.send-link-feedback.error {
+  background: rgba(255, 180, 168, 0.12);
+  color: #ffb4a8;
+  border: 1px solid rgba(255, 180, 168, 0.3);
 }
 
 @media (max-width: 940px) {

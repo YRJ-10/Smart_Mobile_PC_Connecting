@@ -219,6 +219,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _mediaRuntimeSerial = Future<void>.value();
   String? _mediaContextKey;
   bool _disposing = false;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _phoneQueueSubscription;
+  String? _lastReceivedLink;
+  DateTime? _lastReceivedLinkAt;
+  List<_IncomingLink> _incomingLinks = [];
+  bool _linkDialogShowing = false;
 
   bool get _isTrusted =>
       _deviceId.isNotEmpty && _deviceToken.isNotEmpty && _pcId.isNotEmpty;
@@ -233,6 +238,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _mediaService.commands.listen(_handleMediaServiceCommand);
     unawaited(_requestMicrophonePermission());
     _bootstrap();
+    _listenToPhoneQueue();
     unawaited(_refreshQueuedMediaCount());
     _autoReconnectTimer = Timer.periodic(const Duration(seconds: 4), (_) {
       if (!_remoteConnected && _isTrusted && !_autoConnectInFlight && mounted) {
@@ -244,6 +250,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     _autoReconnectTimer?.cancel();
+    _phoneQueueSubscription?.cancel();
     _disposing = true;
     WidgetsBinding.instance.removeObserver(this);
     _speech.stop();
@@ -557,6 +564,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         setState(() => _bootstrapStatus = 'Loading saved connection');
       }
       await _loadConfig();
+      unawaited(_loadIncomingLinks());
       _ensureDeviceId();
       if (mounted) {
         setState(() => _bootstrapStatus = 'Checking launch action');
@@ -934,12 +942,221 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         content: memo,
       );
       if (mounted) {
-        _memoController.clear();
+        _memoController.clear(); _showMemoSuccessNotice();
       }
       return 'Memo prioritas dikirim! Akan muncul di tengah layar monitor saat PC aktif.';
     });
   }
 
+
+  void _showMemoSuccessNotice() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: _panelColor,
+        duration: const Duration(seconds: 3),
+        margin: const EdgeInsets.all(14),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: const BorderSide(color: _successSoft, width: 1.2),
+        ),
+        content: Row(
+          children: const [
+            Icon(Icons.check_circle_rounded, color: _successSoft, size: 22),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '✓ Memo berhasil dikirim ke PC!',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _listenToPhoneQueue() {
+    try {
+      _phoneQueueSubscription = FirebaseFirestore.instance
+          .collection('smart_mpc_phone_queue')
+          .snapshots()
+          .listen((snapshot) {
+        for (final change in snapshot.docChanges) {
+          if (change.type == DocumentChangeType.added) {
+            final data = change.doc.data();
+            final url = data?['url']?.toString();
+            if (url != null && url.isNotEmpty) {
+            change.doc.reference.delete().catchError((e) {
+              debugPrint('Error deleting phone queue doc: $e');
+            });
+              _handleReceivedLinkFromPc(url);
+            }
+          }
+        }
+      }, onError: (e) {
+        debugPrint('Phone queue listener error: $e');
+      });
+    } catch (e) {
+      debugPrint('Init phone queue listener error: $e');
+    }
+  }
+
+  Future<void> _loadIncomingLinks() async {
+    try {
+      final raw = await _prefs.invokeMethod<String>('getIncomingLinks');
+      if (raw != null && raw.isNotEmpty && raw != '[]') {
+        final decoded = jsonDecode(raw) as List<dynamic>;
+        final list = decoded
+            .whereType<Map<String, dynamic>>()
+            .map(_IncomingLink.fromJson)
+            .toList();
+        if (mounted) {
+          setState(() => _incomingLinks = list);
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading incoming links: $e');
+    }
+  }
+
+  Future<void> _saveIncomingLinks() async {
+    try {
+      final raw = jsonEncode(_incomingLinks.map((l) => l.toJson()).toList());
+      await _prefs.invokeMethod('saveIncomingLinks', {'json': raw});
+    } catch (e) {
+      debugPrint('Error saving incoming links: $e');
+    }
+  }
+
+  void _markLinkAsOpened(String id) {
+    final index = _incomingLinks.indexWhere((l) => l.id == id);
+    if (index >= 0) {
+      setState(() {
+        _incomingLinks[index] = _incomingLinks[index].copyWith(opened: true);
+      });
+      unawaited(_saveIncomingLinks());
+    }
+  }
+
+  void _deleteIncomingLink(String id) {
+    setState(() {
+      _incomingLinks.removeWhere((l) => l.id == id);
+    });
+    unawaited(_saveIncomingLinks());
+  }
+
+  void _clearAllIncomingLinks() {
+    setState(() {
+      _incomingLinks.clear();
+    });
+    unawaited(_saveIncomingLinks());
+  }
+
+  void _handleReceivedLinkFromPc(String url) {
+    if (!mounted) return;
+    final now = DateTime.now();
+    if (_lastReceivedLink == url &&
+        _lastReceivedLinkAt != null &&
+        now.difference(_lastReceivedLinkAt!) < const Duration(seconds: 10)) {
+      return;
+    }
+    _lastReceivedLink = url;
+    _lastReceivedLinkAt = now;
+    unawaited(Clipboard.setData(ClipboardData(text: url)));
+
+    final linkId = '${now.millisecondsSinceEpoch}_${Random().nextInt(9999)}';
+    final linkItem = _IncomingLink(
+      id: linkId,
+      url: url,
+      timestamp: now.millisecondsSinceEpoch,
+      opened: false,
+    );
+
+    setState(() {
+      _incomingLinks.removeWhere((l) => l.url == url && !l.opened);
+      _incomingLinks.insert(0, linkItem);
+    });
+    unawaited(_saveIncomingLinks());
+
+    if (_linkDialogShowing) return;
+    _linkDialogShowing = true;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: _panelColor,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: _accentSoft, width: 1.2),
+        ),
+        title: Row(
+          children: const [
+            Icon(Icons.link_rounded, color: _accentSoft, size: 24),
+            SizedBox(width: 8),
+            Text('Tautan dari PC', style: TextStyle(color: Colors.white, fontSize: 16)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'PC mengirim tautan berikut ke HP Anda:',
+              style: TextStyle(color: _mutedText, fontSize: 13),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: _fieldFill,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _panelBorder),
+              ),
+              child: SelectableText(
+                url,
+                style: const TextStyle(color: _accentSoft, fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              '(Tautan otomatis disalin ke clipboard HP & tersimpan di list)',
+              style: TextStyle(color: Colors.white38, fontSize: 11),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Tutup', style: TextStyle(color: _mutedText)),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _markLinkAsOpened(linkId);
+              _openUrlInBrowser(url);
+            },
+            icon: const Icon(Icons.open_in_browser_rounded, size: 18),
+            label: const Text('Buka'),
+          ),
+        ],
+      ),
+    ).then((_) {
+      _linkDialogShowing = false;
+    });
+  }
+
+  Future<void> _openUrlInBrowser(String url) async {
+    try {
+      await _prefs.invokeMethod('openUrl', {'url': url});
+    } catch (e) {
+      debugPrint('Error opening url: $e');
+    }
+  }
 
   Future<void> _pullPcClipboard() async {
     await _run('Reading PC clipboard', () async {
@@ -1278,6 +1495,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   unawaited(_flushQueuedLinks());
                   unawaited(_flushQueuedMedia());
                 }
+              } else if (msg['type'] == 'RECEIVE_LINK' && msg['url'] != null) {
+                _handleReceivedLinkFromPc(msg['url'].toString());
               } else if (msg['ok'] == false) {
                 if (!authCompleter.isCompleted) authCompleter.complete(false);
                 if (mounted) {
@@ -2526,6 +2745,147 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
         const SizedBox(height: 14),
         _SectionCard(
+          title: 'Tautan dari PC' + (_incomingLinks.any((l) => !l.opened) ? ' (${_incomingLinks.where((l) => !l.opened).length} Baru)' : ''),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_incomingLinks.isEmpty)
+                const Text(
+                  'Belum ada tautan yang diterima dari PC',
+                  style: TextStyle(color: _mutedText, fontSize: 13),
+                )
+              else ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Total ${_incomingLinks.length} tautan tersimpan',
+                      style: const TextStyle(color: _mutedText, fontSize: 12),
+                    ),
+                    TextButton.icon(
+                      onPressed: _clearAllIncomingLinks,
+                      icon: const Icon(Icons.clear_all_rounded, size: 16, color: _dangerSoft),
+                      label: const Text('Hapus Semua', style: TextStyle(color: _dangerSoft, fontSize: 12)),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                for (final item in _incomingLinks) ...[
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: item.opened ? _panelColor : _fieldFill,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: item.opened ? _panelBorder : _accentSoft.withValues(alpha: 0.5),
+                        width: item.opened ? 1 : 1.2,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: item.opened
+                                    ? Colors.white10
+                                    : _accentSoft.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: item.opened
+                                      ? _panelBorder
+                                      : _accentSoft.withValues(alpha: 0.4),
+                                ),
+                              ),
+                              child: Text(
+                                item.opened ? 'Dibaca' : 'Baru',
+                                style: TextStyle(
+                                  color: item.opened ? _mutedText : _accentSoft,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              _formatIncomingTimestamp(item.timestamp),
+                              style: const TextStyle(color: _mutedText, fontSize: 11),
+                            ),
+                            const Spacer(),
+                            IconButton(
+                              onPressed: () => _deleteIncomingLink(item.id),
+                              icon: const Icon(Icons.delete_outline_rounded, size: 18, color: _mutedText),
+                              tooltip: 'Hapus tautan',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        SelectableText(
+                          item.url,
+                          style: TextStyle(
+                            color: item.opened ? _mutedText : Colors.white,
+                            fontSize: 13,
+                            fontWeight: item.opened ? FontWeight.normal : FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                Clipboard.setData(ClipboardData(text: item.url));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Tautan disalin ke clipboard'),
+                                    duration: Duration(seconds: 1),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.copy_rounded, size: 14),
+                              label: const Text('Salin', style: TextStyle(fontSize: 12)),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            FilledButton.icon(
+                              onPressed: () {
+                                _markLinkAsOpened(item.id);
+                                _openUrlInBrowser(item.url);
+                              },
+                              icon: const Icon(Icons.open_in_browser_rounded, size: 14),
+                              label: const Text('Buka', style: TextStyle(fontSize: 12)),
+                              style: FilledButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _SectionCard(
           title: 'Memo Prioritas (Pop-up Layar PC)',
           child: Column(
             children: [
@@ -3651,4 +4011,66 @@ class _InfoRow extends StatelessWidget {
       ),
     );
   }
+}
+
+
+class _IncomingLink {
+  const _IncomingLink({
+    required this.id,
+    required this.url,
+    required this.timestamp,
+    this.opened = false,
+  });
+
+  final String id;
+  final String url;
+  final int timestamp;
+  final bool opened;
+
+  _IncomingLink copyWith({
+    String? id,
+    String? url,
+    int? timestamp,
+    bool? opened,
+  }) {
+    return _IncomingLink(
+      id: id ?? this.id,
+      url: url ?? this.url,
+      timestamp: timestamp ?? this.timestamp,
+      opened: opened ?? this.opened,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'url': url,
+    'timestamp': timestamp,
+    'opened': opened,
+  };
+
+  factory _IncomingLink.fromJson(Map<String, dynamic> json) {
+    return _IncomingLink(
+      id: json['id']?.toString() ?? '',
+      url: json['url']?.toString() ?? '',
+      timestamp: (json['timestamp'] as num?)?.toInt() ?? 0,
+      opened: json['opened'] == true,
+    );
+  }
+}
+
+String _formatIncomingTimestamp(int millis) {
+  if (millis <= 0) return '';
+  final dt = DateTime.fromMillisecondsSinceEpoch(millis);
+  final now = DateTime.now();
+  final padH = dt.hour.toString().padLeft(2, '0');
+  final padM = dt.minute.toString().padLeft(2, '0');
+  final timeStr = '$padH:$padM';
+  if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
+    return 'Hari ini, $timeStr';
+  }
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+    'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'
+  ];
+  return '${dt.day} ${months[dt.month - 1]}, $timeStr';
 }

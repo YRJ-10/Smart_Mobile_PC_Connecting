@@ -139,4 +139,19 @@ export class FirebaseSync {
       }
     }
   }
+
+  async sendLinkToPhone(url) {
+    if (!this.db) {
+      throw new Error("Cloud sync disabled (no database)");
+    }
+    const cleanUrl = String(url ?? "").trim();
+    if (!cleanUrl) {
+      throw new Error("URL cannot be empty");
+    }
+    return await this.db.collection("smart_mpc_phone_queue").add({
+      type: "link",
+      url: cleanUrl,
+      createdAt: Date.now()
+    });
+  }
 }

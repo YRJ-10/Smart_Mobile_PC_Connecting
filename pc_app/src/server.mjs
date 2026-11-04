@@ -365,6 +365,10 @@ export class SmartMpcServer {
     return this.state();
   }
 
+  broadcastControl(payload) {
+    this.#controlServer.broadcast(payload);
+  }
+
   addFilesToOutbox(paths) {
     const copied = [];
     for (const source of paths ?? []) {

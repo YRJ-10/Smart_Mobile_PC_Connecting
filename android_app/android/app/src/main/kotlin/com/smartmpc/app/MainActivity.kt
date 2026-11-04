@@ -94,6 +94,23 @@ class MainActivity : FlutterActivity() {
                         openFilePicker()
                         result.success(true)
                     }
+                    "openUrl" -> {
+                        val args = call.arguments as? Map<*, *>
+                        val url = args?.get("url") as? String
+                        if (!url.isNullOrBlank()) {
+                            try {
+                                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                                startActivity(browserIntent)
+                                result.success(true)
+                            } catch (e: Exception) {
+                                result.error("OPEN_FAILED", e.message, null)
+                            }
+                        } else {
+                            result.success(false)
+                        }
+                    }
                     "downloadToDownloads" -> {
                         val args = call.arguments as Map<*, *>
                         val downloadId = downloadToDownloads(
@@ -141,6 +158,15 @@ class MainActivity : FlutterActivity() {
                     }
                     "clearQueuedLinks" -> {
                         prefs.edit().remove("queued_links").apply()
+                        result.success(true)
+                    }
+                    "getIncomingLinks" -> {
+                        val raw = prefs.getString("incoming_links", "[]") ?: "[]"
+                        result.success(raw)
+                    }
+                    "saveIncomingLinks" -> {
+                        val raw = (call.arguments as? Map<*, *>)?.get("json") as? String ?: "[]"
+                        prefs.edit().putString("incoming_links", raw).apply()
                         result.success(true)
                     }
                     else -> result.notImplemented()
