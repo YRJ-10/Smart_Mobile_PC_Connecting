@@ -80,8 +80,8 @@ video {
   width: 72px;
   height: 72px;
   border-radius: 50%;
-  background: rgba(88, 166, 255, 0.12);
-  color: #58a6ff;
+  background: rgba(142, 223, 209, 0.12);
+  color: #8edfd1;
   margin-bottom: 20px;
 }
 
@@ -115,9 +115,9 @@ video {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: #1f6feb;
-  color: #ffffff;
-  border: 1px solid rgba(240, 246, 252, 0.1);
+  background: #202b31;
+  color: #8edfd1;
+  border: 1px solid #38464f;
   padding: 10px 20px;
   border-radius: 8px;
   font-size: 13px;
@@ -127,8 +127,10 @@ video {
 }
 
 .btn-primary:hover {
-  background: #388bfd;
-  box-shadow: 0 4px 12px rgba(31, 111, 235, 0.35);
+  background: #26343c;
+  border-color: #8edfd1;
+  color: #b2f5ea;
+  box-shadow: 0 4px 12px rgba(142, 223, 209, 0.15);
 }
 
 .btn-primary:active {
@@ -233,9 +235,9 @@ video {
 }
 
 .tool-btn.active {
-  background: rgba(88, 166, 255, 0.18);
-  color: #58a6ff;
-  border-color: rgba(88, 166, 255, 0.4);
+  background: rgba(142, 223, 209, 0.18);
+  color: #8edfd1;
+  border-color: rgba(142, 223, 209, 0.4);
 }
 
 .tool-btn.btn-highlight {

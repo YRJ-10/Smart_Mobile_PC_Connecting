@@ -25,7 +25,6 @@ const sendLinkInput = document.querySelector("#sendLinkInput");
 const sendLinkButton = document.querySelector("#sendLinkButton");
 const sendLinkFeedback = document.querySelector("#sendLinkFeedback");
 const openCamViewerButton = document.querySelector("#openCamViewerButton");
-const topbarCamButton = document.querySelector("#topbarCamButton");
 
 let currentState = null;
 let startupSettings = null;
@@ -255,9 +254,6 @@ addOutboxFilesButton.addEventListener("click", async () => {
 });
 if (openCamViewerButton) {
   openCamViewerButton.addEventListener("click", () => api.openCamViewer());
-}
-if (topbarCamButton) {
-  topbarCamButton.addEventListener("click", () => api.openCamViewer());
 }
 
 startupToggle.addEventListener("change", async () => {
