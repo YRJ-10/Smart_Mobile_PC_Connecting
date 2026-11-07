@@ -224,6 +224,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   DateTime? _lastReceivedLinkAt;
   List<_IncomingLink> _incomingLinks = [];
   bool _linkDialogShowing = false;
+  final RTCVideoRenderer _camLocalRenderer = RTCVideoRenderer();
+  RTCPeerConnection? _camPeerConnection;
+  MediaStream? _camStream;
+  bool _isCamStreaming = false;
+  bool _isCamInitializing = false;
+  bool _camFacingFront = false;
+  String _camResolution = '720p';
+  bool _isCctvScreenDimmed = false;
+  final List<RTCIceCandidate> _queuedCamIceCandidates = [];
 
   bool get _isTrusted =>
       _deviceId.isNotEmpty && _deviceToken.isNotEmpty && _pcId.isNotEmpty;
@@ -240,6 +249,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _bootstrap();
     _listenToPhoneQueue();
     unawaited(_refreshQueuedMediaCount());
+    unawaited(_initCamRenderer());
     _autoReconnectTimer = Timer.periodic(const Duration(seconds: 4), (_) {
       if (!_remoteConnected && _isTrusted && !_autoConnectInFlight && mounted) {
         unawaited(_autoConnectToTrustedPc());
@@ -247,6 +257,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
+  Future<void> _initCamRenderer() async {
+    try {
+      await _camLocalRenderer.initialize();
+    } catch (e) {
+      debugPrint('Error initializing camera renderer: $e');
+    }
+  }
   @override
   void dispose() {
     _autoReconnectTimer?.cancel();
@@ -258,6 +275,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     unawaited(_mediaCommandSubscription?.cancel());
     unawaited(_mirrorSystemUi.exit());
     unawaited(_disposeMediaRuntime());
+    unawaited(_stopCameraStreaming(notifyPc: false));
+    unawaited(_camLocalRenderer.dispose());
     _baseUrlController.dispose();
     _pairingTokenController.dispose();
     _urlController.dispose();
@@ -1158,6 +1177,389 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _startCameraStreaming() async {
+    if (_isCamStreaming || _isCamInitializing) return;
+    if (!_remoteConnected) {
+      _showSnack('Hubungkan ke PC terlebih dahulu untuk streaming kamera');
+      return;
+    }
+
+    setState(() => _isCamInitializing = true);
+
+    try {
+      final status = await Permission.camera.request();
+      if (status != PermissionStatus.granted) {
+        _showSnack('Izin kamera ditolak');
+        if (mounted) setState(() => _isCamInitializing = false);
+        return;
+      }
+
+      await _stopCameraStreaming(notifyPc: false);
+      final width = _camResolution == '1080p' ? '1920' : '1280';
+      final height = _camResolution == '1080p' ? '1080' : '720';
+
+      final Map<String, dynamic> mediaConstraints = {
+        'audio': false,
+        'video': {
+          'facingMode': _camFacingFront ? 'user' : 'environment',
+          'mandatory': {
+            'minWidth': width,
+            'minHeight': height,
+            'minFrameRate': '30',
+          },
+          'optional': [],
+        }
+      };
+
+      final stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+      _camStream = stream;
+      _camLocalRenderer.srcObject = stream;
+
+      final peer = await createPeerConnection({
+        'iceServers': [
+          {'urls': 'stun:stun.l.google.com:19302'},
+          {'urls': 'stun:stun1.l.google.com:19302'},
+        ],
+        'sdpSemantics': 'unified-plan',
+      });
+      _camPeerConnection = peer;
+      _queuedCamIceCandidates.clear();
+
+      peer.onIceCandidate = (candidate) {
+        if (candidate.candidate != null) {
+          _sendRemoteCommand({
+            'type': 'CAM_ICE',
+            'candidate': candidate.candidate,
+            'sdpMid': candidate.sdpMid,
+            'sdpMLineIndex': candidate.sdpMLineIndex,
+          });
+        }
+      };
+
+      for (final track in stream.getTracks()) {
+        await peer.addTrack(track, stream);
+      }
+
+      final offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+
+      _sendRemoteCommand({
+        'type': 'CAM_OFFER',
+        'sdp': offer.sdp,
+        'sdpType': offer.type,
+      });
+
+      if (mounted) {
+        setState(() {
+          _isCamStreaming = true;
+          _isCamInitializing = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Camera stream start error: $e');
+      _showSnack('Gagal memulai kamera: $e');
+      await _stopCameraStreaming(notifyPc: false);
+      if (mounted) {
+        setState(() => _isCamInitializing = false);
+      }
+    }
+  }
+
+  Future<void> _stopCameraStreaming({bool notifyPc = true}) async {
+    if (notifyPc && _remoteConnected) {
+      _sendRemoteCommand({'type': 'CAM_STOP'});
+    }
+    try {
+      _camLocalRenderer.srcObject = null;
+      if (_camStream != null) {
+        for (final track in _camStream!.getTracks()) {
+          await track.stop();
+        }
+        await _camStream!.dispose();
+        _camStream = null;
+      }
+      if (_camPeerConnection != null) {
+        await _camPeerConnection!.close();
+        await _camPeerConnection!.dispose();
+        _camPeerConnection = null;
+      }
+    } catch (e) {
+      debugPrint('Stop camera error: $e');
+    } finally {
+      _queuedCamIceCandidates.clear();
+      if (mounted) {
+        setState(() {
+          _isCamStreaming = false;
+          _isCamInitializing = false;
+          _isCctvScreenDimmed = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _switchCameraFacing() async {
+    _camFacingFront = !_camFacingFront;
+    if (_isCamStreaming && _camStream != null) {
+      final videoTracks = _camStream!.getVideoTracks();
+      if (videoTracks.isNotEmpty) {
+        try {
+          await Helper.switchCamera(videoTracks.first);
+          if (mounted) setState(() {});
+          return;
+        } catch (_) {}
+      }
+      await _startCameraStreaming();
+    } else {
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _setCameraResolution(String resolution) async {
+    if (_camResolution == resolution) return;
+    setState(() => _camResolution = resolution);
+    if (_isCamStreaming) {
+      await _startCameraStreaming();
+    }
+  }
+
+  void _handleCameraSignal(Map<String, dynamic> msg) async {
+    final type = msg['type']?.toString();
+    if (type == 'CAM_ANSWER') {
+      if (_camPeerConnection != null && msg['sdp'] != null) {
+        try {
+          await _camPeerConnection!.setRemoteDescription(
+            RTCSessionDescription(
+              msg['sdp'].toString(),
+              msg['sdpType']?.toString() ?? 'answer',
+            ),
+          );
+          for (final cand in _queuedCamIceCandidates) {
+            await _camPeerConnection!.addCandidate(cand);
+          }
+          _queuedCamIceCandidates.clear();
+        } catch (e) {
+          debugPrint('Error setting remote answer: $e');
+        }
+      }
+    } else if (type == 'CAM_ICE') {
+      if (msg['candidate'] != null) {
+        final candidate = RTCIceCandidate(
+          msg['candidate'].toString(),
+          msg['sdpMid']?.toString(),
+          msg['sdpMLineIndex'] is int ? msg['sdpMLineIndex'] as int : null,
+        );
+        if (_camPeerConnection != null && (await _camPeerConnection!.getRemoteDescription()) != null) {
+          await _camPeerConnection!.addCandidate(candidate);
+        } else {
+          _queuedCamIceCandidates.add(candidate);
+        }
+      }
+    } else if (type == 'CAM_STOP') {
+      await _stopCameraStreaming(notifyPc: false);
+      _showSnack('Streaming kamera dihentikan oleh PC');
+    } else if (type == 'CAM_SWITCH') {
+      await _switchCameraFacing();
+    } else if (type == 'CAM_REQUEST') {
+      if (!_isCamStreaming && !_isCamInitializing) {
+        await _startCameraStreaming();
+      }
+    }
+  }
+
+  Widget _buildCameraStreamingCardContent() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _isCamStreaming ? _accentSoft : _mutedText,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _isCamStreaming
+                    ? 'Streaming Aktif ($_camResolution - ${_camFacingFront ? "Depan" : "Belakang"})'
+                    : (_isCamInitializing ? 'Menyiapkan kamera...' : 'Kamera Nonaktif'),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: _isCamStreaming ? _accentSoft : _mutedText,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (_isCamStreaming) ...[
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              height: 180,
+              width: double.infinity,
+              color: Colors.black,
+              child: Stack(
+                children: [
+                  RTCVideoView(
+                    _camLocalRenderer,
+                    mirror: _camFacingFront,
+                    objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                  ),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.65),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        '${_camFacingFront ? "Depan" : "Belakang"} • $_camResolution',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            FilledButton.icon(
+              onPressed: _isCamInitializing
+                  ? null
+                  : () {
+                      if (_isCamStreaming) {
+                        unawaited(_stopCameraStreaming());
+                      } else {
+                        unawaited(_startCameraStreaming());
+                      }
+                    },
+              style: _isCamStreaming
+                  ? FilledButton.styleFrom(
+                      backgroundColor: Colors.redAccent.withValues(alpha: 0.85),
+                    )
+                  : null,
+              icon: Icon(_isCamStreaming
+                  ? Icons.stop_rounded
+                  : Icons.videocam_rounded),
+              label: Text(_isCamStreaming
+                  ? 'Hentikan Streaming'
+                  : 'Mulai Live Cam'),
+            ),
+            OutlinedButton.icon(
+              onPressed: _isCamInitializing ? null : () => unawaited(_switchCameraFacing()),
+              icon: const Icon(Icons.flip_camera_android_rounded),
+              label: Text(_camFacingFront ? 'Lensa: Depan' : 'Lensa: Belakang'),
+            ),
+            if (_isCamStreaming)
+              FilledButton.tonalIcon(
+                onPressed: () => setState(() => _isCctvScreenDimmed = true),
+                icon: const Icon(Icons.bedtime_rounded),
+                label: const Text('Mode Layar Gelap (CCTV)'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            const Text(
+              'Resolusi:',
+              style: TextStyle(fontSize: 13, color: _mutedText),
+            ),
+            const SizedBox(width: 12),
+            ChoiceChip(
+              label: const Text('720p HD'),
+              selected: _camResolution == '720p',
+              onSelected: (selected) {
+                if (selected) unawaited(_setCameraResolution('720p'));
+              },
+            ),
+            const SizedBox(width: 8),
+            ChoiceChip(
+              label: const Text('1080p FHD'),
+              selected: _camResolution == '1080p',
+              onSelected: (selected) {
+                if (selected) unawaited(_setCameraResolution('1080p'));
+              },
+            ),
+          ],
+        ),
+        
+        const SizedBox(height: 6),
+        const Text(
+          'Mode layar gelap menghemat baterai saat CCTV berjalan. Ketuk 2x untuk membuka.',
+          style: TextStyle(fontSize: 11, color: _mutedText),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCctvDimmedOverlay() {
+    return Positioned.fill(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onDoubleTap: () {
+          setState(() => _isCctvScreenDimmed = false);
+        },
+        child: Container(
+          color: Colors.black,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.videocam_rounded,
+                  color: Colors.white.withValues(alpha: 0.15), size: 56),
+              const SizedBox(height: 16),
+              Text(
+                'Mode CCTV Hemat Daya Aktif',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.25),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Streaming kamera tetap berjalan ke PC\nKetuk 2x untuk membuka layar',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _pullPcClipboard() async {
     await _run('Reading PC clipboard', () async {
       final result = await _getJson('/api/clipboard', authorized: true);
@@ -1497,6 +1899,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 }
               } else if (msg['type'] == 'RECEIVE_LINK' && msg['url'] != null) {
                 _handleReceivedLinkFromPc(msg['url'].toString());
+              } else if (msg['type']?.toString().startsWith('CAM_') == true) {
+                _handleCameraSignal(msg);
               } else if (msg['ok'] == false) {
                 if (!authCompleter.isCompleted) authCompleter.complete(false);
                 if (mounted) {
@@ -1517,6 +1921,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             setState(() {
               _remoteConnected = false;
               _remoteStatus = 'Remote disconnected';
+              unawaited(_stopCameraStreaming(notifyPc: false));
               if (_status == 'Trusted PC connected') {
                 _status = 'PC disconnected';
               }
@@ -1529,6 +1934,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             setState(() {
               _remoteConnected = false;
               _remoteStatus = 'Remote error: $error';
+              unawaited(_stopCameraStreaming(notifyPc: false));
               if (_status == 'Trusted PC connected') {
                 _status = 'PC disconnected';
               }
@@ -2183,6 +2589,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         children: [
           Positioned.fill(child: currentPage),
           if (_audioEnabled && isMirrorTab) _buildGlobalAudioControl(),
+          if (_isCctvScreenDimmed) _buildCctvDimmedOverlay(),
         ],
       ),
       bottomNavigationBar: isImmersiveTab
@@ -2653,6 +3060,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ),
             ],
           ),
+        ),
+        const SizedBox(height: 14),
+        _SectionCard(
+          title: 'Kamera HP & CCTV',
+          child: _buildCameraStreamingCardContent(),
         ),
         const SizedBox(height: 14),
         _SectionCard(

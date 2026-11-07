@@ -13,5 +13,14 @@ contextBridge.exposeInMainWorld("smartMpc", {
   openOutbox: () => ipcRenderer.invoke("ui:openOutbox"),
   addFilesToOutbox: () => ipcRenderer.invoke("ui:addFilesToOutbox"),
   sendLinkToPhone: (url) => ipcRenderer.invoke("server:sendLinkToPhone", url),
-  onLinksReceived: (callback) => ipcRenderer.on("links", (_event, links) => callback(links))
+  onLinksReceived: (callback) => ipcRenderer.on("links", (_event, links) => callback(links)),
+  openCamViewer: () => ipcRenderer.invoke("cam:openViewer"),
+  sendCamSignal: (signal) => ipcRenderer.invoke("cam:sendSignal", signal),
+  onCamSignal: (callback) => {
+    const handler = (_event, signal) => callback(signal);
+    ipcRenderer.on("cam:signal", handler);
+    return () => ipcRenderer.removeListener("cam:signal", handler);
+  },
+  setCamAlwaysOnTop: (flag) => ipcRenderer.invoke("cam:setAlwaysOnTop", flag),
+  saveCamSnapshot: (dataUrl) => ipcRenderer.invoke("cam:saveSnapshot", dataUrl)
 });

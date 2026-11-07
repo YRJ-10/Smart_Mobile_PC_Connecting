@@ -17,6 +17,8 @@ const mediaWorker = new MediaWorkerProcess();
 
 let progressWindow = null;
 let progressTimeout = null;
+let camViewerWindow = null;
+let lastCameraOffer = null;
 
 function createProgressWindow() {
   if (progressWindow && !progressWindow.isDestroyed()) return progressWindow;
@@ -98,6 +100,23 @@ const server = new SmartMpcServer({
   mediaWorker,
   onUploadProgress: handleUploadProgress,
   onLinksReceived: handleLinksReceived,
+  onCameraSignal: (signal) => {
+    if (signal.type === "CAM_OFFER") {
+      lastCameraOffer = signal;
+    } else if (signal.type === "CAM_STOP" || signal.type === "CAM_DISCONNECTED") {
+      lastCameraOffer = null;
+    }
+
+    if (camViewerWindow && !camViewerWindow.isDestroyed()) {
+      camViewerWindow.webContents.send("cam:signal", signal);
+    } else if (signal.type === "CAM_OFFER") {
+      openCamViewerWindow();
+    }
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("cam:signal", signal);
+    }
+  },
   onUrlIntent: async ({ url, autoLaunch }) => {
     handleLinksReceived([url]);
     if (autoLaunch) {
@@ -105,6 +124,52 @@ const server = new SmartMpcServer({
     }
   }
 });
+
+function openCamViewerWindow() {
+  if (camViewerWindow && !camViewerWindow.isDestroyed()) {
+    if (camViewerWindow.isMinimized()) camViewerWindow.restore();
+    camViewerWindow.show();
+    camViewerWindow.focus();
+    return camViewerWindow;
+  }
+
+  camViewerWindow = new BrowserWindow({
+    width: 860,
+    height: 640,
+    minWidth: 440,
+    minHeight: 320,
+    title: "Smart MPC - Live Camera / CCTV",
+    backgroundColor: "#0d1117",
+    icon: iconPath,
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  camViewerWindow.loadFile(join(rendererRoot, "cam-viewer.html"));
+  camViewerWindow.once("ready-to-show", () => {
+    camViewerWindow.show();
+    camViewerWindow.focus();
+    if (lastCameraOffer) {
+      camViewerWindow.webContents.send("cam:signal", lastCameraOffer);
+    }
+  });
+
+  camViewerWindow.on("close", () => {
+    try {
+      server.sendCameraSignal({ type: "CAM_STOP" });
+    } catch (_) {}
+  });
+
+  camViewerWindow.on("closed", () => {
+    camViewerWindow = null;
+  });
+
+  return camViewerWindow;
+}
 
 function showMemoWindow(memo) {
   const win = new BrowserWindow({
@@ -544,4 +609,47 @@ ipcMain.handle("server:sendLinkToPhone", async (_event, rawUrl) => {
   }
 
   return { ok: true, viaLan: sentViaLan, viaCloud: sentViaCloud };
+});
+
+ipcMain.handle("cam:openViewer", () => {
+  openCamViewerWindow();
+  return true;
+});
+
+ipcMain.handle("cam:sendSignal", (_event, signal) => {
+  try {
+    server.sendCameraSignal(signal);
+    return true;
+  } catch (err) {
+    return false;
+  }
+});
+
+ipcMain.handle("cam:setAlwaysOnTop", (_event, flag) => {
+  if (camViewerWindow && !camViewerWindow.isDestroyed()) {
+    camViewerWindow.setAlwaysOnTop(Boolean(flag));
+    return camViewerWindow.isAlwaysOnTop();
+  }
+  return false;
+});
+
+ipcMain.handle("cam:saveSnapshot", async (_event, base64Data) => {
+  if (!base64Data) return { ok: false, error: "Snapshot kosong" };
+  try {
+    const rawData = String(base64Data).replace(/^data:image\/\w+;base64,/, "");
+    const buffer = Buffer.from(rawData, "base64");
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const timeStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const filename = `Cam_Snapshot_${timeStr}.png`;
+    const targetPath = join(server.config.inbox_dir, filename);
+    writeFileSync(targetPath, buffer);
+
+    const image = nativeImage.createFromBuffer(buffer);
+    clipboard.writeImage(image);
+
+    return { ok: true, filename, path: targetPath };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 });

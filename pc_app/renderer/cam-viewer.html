@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart MPC - Live Camera / CCTV</title>
+    <link rel="stylesheet" href="./cam-viewer.css">
+  </head>
+  <body>
+    <div id="viewerContainer" class="viewer-container">
+      <!-- Video Element -->
+      <div class="video-wrapper">
+        <video id="camVideo" autoplay playsinline></video>
+      </div>
+
+      <!-- Standby Overlay (shown when stream is inactive) -->
+      <div id="standbyOverlay" class="standby-overlay">
+        <div class="standby-card">
+          <div class="standby-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+              <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+          </div>
+          <h2>Kamera HP (Webcam / CCTV)</h2>
+          <p id="standbyText">Menunggu streaming video dari ponsel...</p>
+          <div class="standby-hint">
+            Buka menu <strong>Kamera</strong> di aplikasi Android dan tekan <strong>Mulai Streaming</strong>, atau minta langsung dari tombol di bawah:
+          </div>
+          <button id="btnRequestStream" type="button" class="btn-primary">
+            📡 Minta Streaming dari HP
+          </button>
+        </div>
+      </div>
+
+      <!-- Floating Controls Toolbar -->
+      <div id="toolbar" class="floating-toolbar">
+        <div class="status-badge" id="statusBadge">
+          <span class="status-dot"></span>
+          <span id="statusLabel">Standby</span>
+        </div>
+
+        <div class="toolbar-actions">
+          <button id="btnAlwaysOnTop" type="button" class="tool-btn" title="Pin Selalu di Atas (Always on Top)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="17" x2="12" y2="22"></line>
+              <path d="M5 17h14v-2l-2-2V5a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v8l-2 2v2z"></path>
+            </svg>
+            <span class="btn-label">Pin</span>
+          </button>
+
+          <button id="btnRotate" type="button" class="tool-btn" title="Putar 90 Derajat (Rotasi)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+            </svg>
+            <span class="btn-label">Putar</span>
+          </button>
+
+          <button id="btnMirror" type="button" class="tool-btn" title="Cermin Horizontal (Flip Selfie)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="7 8 3 12 7 16"></polyline>
+              <line x1="3" y1="12" x2="11" y2="12"></line>
+              <polyline points="17 8 21 12 17 16"></polyline>
+              <line x1="21" y1="12" x2="13" y2="12"></line>
+            </svg>
+            <span class="btn-label">Cermin</span>
+          </button>
+
+          <button id="btnSwitchCam" type="button" class="tool-btn" title="Ganti Lensa Ponsel (Depan/Belakang)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11 19H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"></path>
+              <path d="M13 5h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-5"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="m18 22-3-3 3-3"></path>
+              <path d="m6 2 3 3-3 3"></path>
+            </svg>
+            <span class="btn-label">Lensa</span>
+          </button>
+
+          <button id="btnCapture" type="button" class="tool-btn btn-highlight" title="Ambil Foto & Simpan ke Inbox / Clipboard">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <circle cx="8.5" cy="8.5" r="1.5"></circle>
+              <polyline points="21 15 16 10 5 21"></polyline>
+            </svg>
+            <span class="btn-label">Foto</span>
+          </button>
+
+          <button id="btnFullscreen" type="button" class="tool-btn" title="Layar Penuh (F11)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+            </svg>
+            <span class="btn-label">Penuh</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Toast Feedback -->
+      <div id="toast" class="toast hidden"></div>
+      <!-- Hidden canvas for taking snapshot -->
+      <canvas id="snapshotCanvas" style="display: none;"></canvas>
+    </div>
+
+    <script src="./cam-viewer.js"></script>
+  </body>
+</html>

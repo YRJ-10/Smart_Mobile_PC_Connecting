@@ -229,13 +229,20 @@ export class SmartMpcServer {
   #server = null;
   #startedAt = null;
 
-  constructor({ config = loadOrCreateConfig(), requestLog = new RequestLog(), mediaWorker = null, onUploadProgress = null, onLinksReceived = null, onUrlIntent = null } = {}) {
+  constructor({ config = loadOrCreateConfig(), requestLog = new RequestLog(), mediaWorker = null, onUploadProgress = null, onLinksReceived = null, onUrlIntent = null, onCameraSignal = null } = {}) {
     this.#config = config;
     this.onUploadProgress = onUploadProgress;
     this.onLinksReceived = onLinksReceived;
     this.onUrlIntent = onUrlIntent;
+    this.onCameraSignal = onCameraSignal;
     this.#requestLog = requestLog;
     this.#controlServer = new ControlServer({ config: this.#config, requestLog: this.#requestLog });
+    this.#controlServer.on("camera_signal", (signal, socket) => {
+      if (this.onCameraSignal) this.onCameraSignal(signal, socket);
+    });
+    this.#controlServer.on("client_disconnected", (socket) => {
+      if (this.onCameraSignal) this.onCameraSignal({ type: "CAM_DISCONNECTED" }, socket);
+    });
     this.#discoveryServer = new DiscoveryServer({ config: this.#config, requestLog: this.#requestLog });
     this.#screenServer = new ScreenServer({ config: this.#config, requestLog: this.#requestLog });
     this.#mediaSignaling = new MediaSignalingService({ requestLog: this.#requestLog });
@@ -367,6 +374,10 @@ export class SmartMpcServer {
 
   broadcastControl(payload) {
     this.#controlServer.broadcast(payload);
+  }
+
+  sendCameraSignal(payload) {
+    this.#controlServer.sendCameraSignal(payload);
   }
 
   addFilesToOutbox(paths) {

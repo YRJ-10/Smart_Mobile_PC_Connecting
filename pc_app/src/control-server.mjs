@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { join } from "node:path";
@@ -38,7 +39,7 @@ const ALLOWED_SPECIAL_KEYS = new Set([
 
 const HIGH_FREQUENCY_COMMANDS = new Set(["MOUSE_MOVE"]);
 
-export class ControlServer {
+export class ControlServer extends EventEmitter {
   #config;
   #requestLog;
   #server = null;
@@ -46,6 +47,7 @@ export class ControlServer {
   #clients = new Set();
 
   constructor({ config, requestLog }) {
+    super();
     this.#config = config;
     this.#requestLog = requestLog;
   }
@@ -120,6 +122,10 @@ export class ControlServer {
             authenticated = this.#authenticate(message, socket);
             continue;
           }
+          if (typeof message.type === "string" && message.type.startsWith("CAM_")) {
+            this.emit("camera_signal", message, socket);
+            continue;
+          }
           this.#handleCommand(message, socket);
         } catch (error) {
           this.#send(socket, { ok: false, error: error.message });
@@ -127,8 +133,14 @@ export class ControlServer {
       }
     });
 
-    socket.on("close", () => this.#clients.delete(socket));
-    socket.on("error", () => this.#clients.delete(socket));
+    socket.on("close", () => {
+      this.#clients.delete(socket);
+      this.emit("client_disconnected", socket);
+    });
+    socket.on("error", () => {
+      this.#clients.delete(socket);
+      this.emit("client_disconnected", socket);
+    });
   }
 
   #authenticate(message, socket) {
@@ -208,6 +220,10 @@ export class ControlServer {
     for (const socket of this.#clients) {
       socket.write(message);
     }
+  }
+
+  sendCameraSignal(payload) {
+    this.broadcast(payload);
   }
 }
 

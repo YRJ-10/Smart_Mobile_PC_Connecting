@@ -94,6 +94,37 @@ span,
   color: #9aa8af;
 }
 
+.btn-livecam {
+  background: #1f6feb !important;
+  border-color: #388bfd !important;
+  color: #ffffff !important;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(31, 111, 235, 0.25);
+  transition: all 0.2s ease;
+}
+
+.btn-livecam:hover {
+  background: #388bfd !important;
+  box-shadow: 0 4px 14px rgba(31, 111, 235, 0.4);
+}
+
+.btn-topbar-cam {
+  background: #1c2730;
+  border: 1px solid #33444f;
+  color: #8edfd1;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.btn-topbar-cam:hover {
+  background: #24333e;
+  border-color: #8edfd1;
+  color: #b2f5ea;
+}
+
 .server-actions,
 .panel-header,
 .folder-actions {
