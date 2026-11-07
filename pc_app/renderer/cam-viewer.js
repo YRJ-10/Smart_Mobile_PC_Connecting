@@ -26,6 +26,14 @@ const btnRequestStream = document.getElementById("btnRequestStream");
 
 function updateVideoTransform() {
   const scale = isMirrored ? -1 : 1;
+  const isPerpendicular = rotation === 90 || rotation === 270;
+  if (isPerpendicular) {
+    camVideo.style.width = `${window.innerHeight}px`;
+    camVideo.style.height = `${window.innerWidth}px`;
+  } else {
+    camVideo.style.width = "100%";
+    camVideo.style.height = "100%";
+  }
   camVideo.style.transform = `rotate(${rotation}deg) scaleX(${scale})`;
 }
 
@@ -217,8 +225,9 @@ btnCapture.addEventListener("click", async () => {
     return;
   }
 
-  snapshotCanvas.width = camVideo.videoWidth;
-  snapshotCanvas.height = camVideo.videoHeight;
+  const isPerpendicular = rotation === 90 || rotation === 270;
+  snapshotCanvas.width = isPerpendicular ? camVideo.videoHeight : camVideo.videoWidth;
+  snapshotCanvas.height = isPerpendicular ? camVideo.videoWidth : camVideo.videoHeight;
   const ctx = snapshotCanvas.getContext("2d");
 
   // Apply current rotation/mirror to captured photo if rotated/mirrored
@@ -226,24 +235,13 @@ btnCapture.addEventListener("click", async () => {
   ctx.translate(snapshotCanvas.width / 2, snapshotCanvas.height / 2);
   ctx.rotate((rotation * Math.PI) / 180);
   ctx.scale(isMirrored ? -1 : 1, 1);
-  if (rotation === 90 || rotation === 270) {
-    // If aspect inverted due to 90/270 rotation
-    ctx.drawImage(
-      camVideo,
-      -snapshotCanvas.height / 2,
-      -snapshotCanvas.width / 2,
-      snapshotCanvas.height,
-      snapshotCanvas.width
-    );
-  } else {
-    ctx.drawImage(
-      camVideo,
-      -snapshotCanvas.width / 2,
-      -snapshotCanvas.height / 2,
-      snapshotCanvas.width,
-      snapshotCanvas.height
-    );
-  }
+  ctx.drawImage(
+    camVideo,
+    -camVideo.videoWidth / 2,
+    -camVideo.videoHeight / 2,
+    camVideo.videoWidth,
+    camVideo.videoHeight
+  );
   ctx.restore();
 
   const dataUrl = snapshotCanvas.toDataURL("image/png");
@@ -271,6 +269,7 @@ btnRequestStream.addEventListener("click", () => {
 });
 
 // Setup
+window.addEventListener("resize", updateVideoTransform);
 window.smartMpc.onCamSignal(handleSignal);
 window.smartMpc.sendCamSignal({ type: "CAM_REQUEST" });
 resetIdleTimer();
