@@ -1,5 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell, Tray, screen } from "electron";
-import { exec } from "node:child_process";
+import { exec, spawn } from "node:child_process";
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -100,6 +100,65 @@ const server = new SmartMpcServer({
   mediaWorker,
   onUploadProgress: handleUploadProgress,
   onLinksReceived: handleLinksReceived,
+  onRestartServer: () => {
+    try {
+      const tempDir = process.env.TEMP || app.getPath("temp");
+      const batPath = join(tempDir, "smart_mpc_restart.bat");
+      const vbsPath = join(tempDir, "smart_mpc_restart.vbs");
+      const exeTarget = "C:\\Users\\yeryi\\AndroidStudioProjects\\Smart_MPC\\pc_app\\dist\\Smart MPC PC Server.exe";
+      const batContent = `@echo off\r
+setlocal\r
+:: 1. Radically kill all existing processes\r
+taskkill /F /IM "smart-mpc-worker.exe" >nul 2>&1\r
+taskkill /F /IM "Smart MPC PC Server.exe" >nul 2>&1\r
+\r
+:: 2. Strict loop: wait until 100000% extinguished from memory\r
+:wait_loop\r
+tasklist /FI "IMAGENAME eq Smart MPC PC Server.exe" 2>nul | find /I "Smart MPC PC Server.exe" >nul\r
+if "%ERRORLEVEL%"=="0" (\r
+    taskkill /F /IM "Smart MPC PC Server.exe" >nul 2>&1\r
+    timeout /t 1 /nobreak >nul\r
+    goto wait_loop\r
+)\r
+\r
+tasklist /FI "IMAGENAME eq smart-mpc-worker.exe" 2>nul | find /I "smart-mpc-worker.exe" >nul\r
+if "%ERRORLEVEL%"=="0" (\r
+    taskkill /F /IM "smart-mpc-worker.exe" >nul 2>&1\r
+    timeout /t 1 /nobreak >nul\r
+    goto wait_loop\r
+)\r
+\r
+tasklist /FI "IMAGENAME eq Smart MPC PC Server.exe" 2>nul | find /I "Smart MPC PC Server.exe" >nul\r
+if "%ERRORLEVEL%"=="0" goto wait_loop\r
+\r
+tasklist /FI "IMAGENAME eq smart-mpc-worker.exe" 2>nul | find /I "smart-mpc-worker.exe" >nul\r
+if "%ERRORLEVEL%"=="0" goto wait_loop\r
+\r
+:: Extra buffer to ensure Windows socket and network port release\r
+timeout /t 1 /nobreak >nul\r
+\r
+:: 3. Launch the application\r
+start "" "${exeTarget}"\r
+`;
+      writeFileSync(batPath, batContent);
+
+      // Gunakan WScript.Shell dengan flag 0 (SW_HIDE) agar 100% tidak ada jendela hitam/terminal yang muncul sama sekali
+      const vbsContent = `Set shell = CreateObject("WScript.Shell")\r\nshell.Run "cmd.exe /c """ & WScript.Arguments(0) & """", 0, False\r\n`;
+      writeFileSync(vbsPath, vbsContent);
+
+      const child = spawn("wscript.exe", [vbsPath, batPath], {
+        detached: true,
+        stdio: "ignore"
+      });
+      child.unref();
+
+      setTimeout(() => {
+        app.exit(0);
+      }, 300);
+    } catch (err) {
+      console.error("[RestartServer] Error:", err);
+    }
+  },
   onCameraSignal: (signal) => {
     if (signal.type === "CAM_OFFER") {
       lastCameraOffer = signal;

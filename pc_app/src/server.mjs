@@ -229,12 +229,13 @@ export class SmartMpcServer {
   #server = null;
   #startedAt = null;
 
-  constructor({ config = loadOrCreateConfig(), requestLog = new RequestLog(), mediaWorker = null, onUploadProgress = null, onLinksReceived = null, onUrlIntent = null, onCameraSignal = null } = {}) {
+  constructor({ config = loadOrCreateConfig(), requestLog = new RequestLog(), mediaWorker = null, onUploadProgress = null, onLinksReceived = null, onUrlIntent = null, onCameraSignal = null, onRestartServer = null } = {}) {
     this.#config = config;
     this.onUploadProgress = onUploadProgress;
     this.onLinksReceived = onLinksReceived;
     this.onUrlIntent = onUrlIntent;
     this.onCameraSignal = onCameraSignal;
+    this.onRestartServer = onRestartServer;
     this.#requestLog = requestLog;
     this.#controlServer = new ControlServer({ config: this.#config, requestLog: this.#requestLog });
     this.#controlServer.on("camera_signal", (signal, socket) => {
@@ -445,7 +446,7 @@ export class SmartMpcServer {
         route === "/api/request-files" ||
         route === "/api/request-files/download" ||
         route === "/api/server/state");
-    const protectedPost = req.method === "POST" && (route === "/api/intent" || route === "/api/files" || route === "/api/links" || sessionPost);
+    const protectedPost = req.method === "POST" && (route === "/api/intent" || route === "/api/files" || route === "/api/links" || route === "/api/server/restart" || sessionPost);
 
     if ((protectedGet || protectedPost) && !this.#isAuthorized(req)) {
       this.#requestLog.add("unauthorized", { route });
@@ -462,6 +463,15 @@ export class SmartMpcServer {
     if (req.method === "POST" && route === "/api/session/stop") {
       const stopped = this.#stopSession(req);
       sendJson(res, 200, { ok: true, stopped });
+      return;
+    }
+
+    if (req.method === "POST" && route === "/api/server/restart") {
+      this.#requestLog.add("server_restart_requested");
+      sendJson(res, 200, { ok: true, message: "Server restarting" });
+      if (this.onRestartServer) {
+        setTimeout(() => this.onRestartServer(), 300);
+      }
       return;
     }
 

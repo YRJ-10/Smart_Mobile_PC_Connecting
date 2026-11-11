@@ -2527,6 +2527,69 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _saveConfig();
   }
 
+  Future<void> _confirmAndRestartServer() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: _panelColor,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: const BorderSide(color: _panelBorder, width: 1.2),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.restart_alt_rounded, color: _accentSoft, size: 24),
+            SizedBox(width: 10),
+            Text(
+              'Restart Server PC',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Apakah Anda yakin ingin me-restart server di PC?\n\nServer akan menutup dan membuka kembali dirinya di sesi desktop agar mirroring berjalan normal.',
+          style: TextStyle(color: _mutedText, fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Tidak', style: TextStyle(color: _mutedText)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: _accentSoft,
+              foregroundColor: _appBackground,
+            ),
+            child: const Text('Ya', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      _showSnack('Mengirim perintah restart ke PC...');
+      await _postJson('/api/server/restart', {});
+      _showSnack('Server PC sedang di-restart, menyambung ulang dalam 3 detik...');
+      await Future<void>.delayed(const Duration(seconds: 3));
+      await _autoConnectToTrustedPc();
+      if (_tabIndex == _mirrorTab) {
+        final lifecycle = _mirrorLifecycle;
+        if (lifecycle != null) {
+          unawaited(_queueMediaRuntime(lifecycle.retry));
+        }
+      }
+    } catch (e) {
+      _showSnack('Gagal me-restart server: $e');
+    }
+  }
+
   String _validQuickAction(String? value) {
     const ids = {
       'send_file',
@@ -2573,6 +2636,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   _buildAudioControlButton(size: 38),
                   const SizedBox(width: 8),
                 ],
+                IconButton(
+                  icon: const Icon(Icons.restart_alt_rounded, color: _accentSoft, size: 22),
+                  tooltip: 'Restart PC Server',
+                  onPressed: _confirmAndRestartServer,
+                ),
                 Padding(
                   padding: const EdgeInsets.only(right: 12),
                   child: Center(
@@ -3999,6 +4067,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       renderState: _videoRenderState,
       mediaState: _mediaState,
       onExit: () => unawaited(_exitMirrorPage()),
+      onRestartServer: _confirmAndRestartServer,
       onRetry: () {
         final lifecycle = _mirrorLifecycle;
         if (lifecycle != null) {

@@ -14,6 +14,7 @@ class WebRtcMirrorView extends StatefulWidget {
     required this.mediaState,
     required this.onExit,
     required this.onRetry,
+    this.onRestartServer,
     this.onSendCommand,
   });
 
@@ -22,6 +23,7 @@ class WebRtcMirrorView extends StatefulWidget {
   final MediaState mediaState;
   final VoidCallback onExit;
   final VoidCallback onRetry;
+  final VoidCallback? onRestartServer;
   final void Function(Map<String, Object?> command)? onSendCommand;
 
   @override
@@ -486,6 +488,7 @@ class _WebRtcMirrorViewState extends State<WebRtcMirrorView> {
                       widget.mediaState.error ??
                       'Mirror connection failed',
                   onRetry: widget.onRetry,
+                  onRestartServer: widget.onRestartServer,
                 ),
 
               // Top Left: Back Button
@@ -827,10 +830,15 @@ class _MirrorMessage extends StatelessWidget {
 }
 
 class _MirrorFailure extends StatelessWidget {
-  const _MirrorFailure({required this.message, required this.onRetry});
+  const _MirrorFailure({
+    required this.message,
+    required this.onRetry,
+    this.onRestartServer,
+  });
 
   final String message;
   final VoidCallback onRetry;
+  final VoidCallback? onRestartServer;
 
   @override
   Widget build(BuildContext context) {
@@ -851,10 +859,27 @@ class _MirrorFailure extends StatelessWidget {
               style: const TextStyle(color: Colors.white70),
             ),
             const SizedBox(height: 14),
-            FilledButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Retry'),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (onRestartServer != null) ...[
+                  OutlinedButton.icon(
+                    onPressed: onRestartServer,
+                    icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                    label: const Text('Restart Server'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF8EDFD1),
+                      side: const BorderSide(color: Color(0xFF344248), width: 1.2),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                FilledButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Retry'),
+                ),
+              ],
             ),
           ],
         ),
