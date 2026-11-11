@@ -137,8 +137,8 @@ if "%ERRORLEVEL%"=="0" goto wait_loop\r
 :: Extra buffer to ensure Windows socket and network port release\r
 timeout /t 1 /nobreak >nul\r
 \r
-:: 3. Launch the application\r
-start "" "${exeTarget}"\r
+:: 3. Launch the application via Windows Explorer (interactive desktop shell)\r
+explorer.exe "${exeTarget}"\r
 `;
       writeFileSync(batPath, batContent);
 
